@@ -47,3 +47,23 @@ Best next move:
 Here is the project data:
 ${context}`;
 }
+
+// Fallback MVP-item extraction, used only when the local checkbox parser
+// finds nothing (a messy doc without "- [ ]" checklists). Must return ONLY
+// JSON — no prose, no markdown fences, no fabricated items.
+export function mvpExtractionSystem(): string {
+  return `You extract a build checklist from a messy product doc.
+
+Rules:
+- Only extract items that are clearly actionable build tasks or features.
+- Do not invent items that are not implied by the text.
+- priority must be one of: must_have, should_have, nice_to_have.
+  Infer priority from language (e.g. "must", "core", "MVP" -> must_have;
+  "should", "later" -> should_have; "nice", "maybe", "someday" -> nice_to_have).
+  If truly unclear, use should_have.
+- description is optional context in a few words; use "" if none.
+- If you cannot find any real items, return {"items": []}. Do not force items.
+
+Respond with ONLY this JSON shape, nothing else, no markdown fences:
+{"items": [{"title": "...", "description": "...", "priority": "must_have"}]}`;
+}

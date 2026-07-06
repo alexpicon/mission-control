@@ -87,3 +87,25 @@ export async function complete(opts: {
 
   return text || "(empty response)";
 }
+
+// Structured-JSON completion. Used only for tasks that must return machine-
+// readable data (MVP extraction, evidence matching) — never for free text.
+// Throws rather than guessing if the model's output isn't valid JSON, so
+// callers can fall back to "Not enough data" instead of fabricating a result.
+export async function completeJson<T>(opts: {
+  system: string;
+  messages: ChatMessage[];
+  maxTokens?: number;
+}): Promise<T> {
+  const text = await complete(opts);
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    throw new Error("Model did not return valid JSON.");
+  }
+}
