@@ -1,0 +1,236 @@
+// Orchestrates the MVP-file and folder-tracking flows. This is the only place
+// that decides when to propose a scope update or an item update — pages call
+// these functions, they never talk to invoke()/the parser/the diff logic directly.
+
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  FolderSnapshotEntry,
+  Project,
+  ScanCategory,
+  ScannedFile,
+} from "../types";
+import {
+  cutMvpItemByTitle,
+  findScopeUpdateByHash,
+  getFolderSnapshot,
+  getScopeUpdate,
+  insertMvpItem,
+  insertScopeUpdate,
+  listMvpItems,
+  replaceFolderSnapshot,
+  setMvpFileSeen,
+  setProgressMode,
+  setScopeUpdateStatus,
+  updateMvpItemFields,
+  upsertProposedItemUpdate,
+} from "../db";
+import { parseMvpMarkdown } from "./parse";
+import { computeMvpProgress, diffMvpItems, hasMeaningfulDiff, simulateApply } from "./diff";
+import type { MvpProgress } from "./diff";
+import { matchFilesToItems, formatEvidence } from "./evidence";
+import { extractMvpItemsWithAI } from "../ai/mvpExtract";
+import { hasApiKey } from "../ai/provider";
+
+export type CheckMvpResult =
+  | { status: "no_path" }
+  | { status: "not_found"; message: string }
+  | { status: "unchanged" }
+  | { status: "proposed" }
+  | { status: "no_items_found"; message: string };
+
+// Re-reads the connected MVP file, and if its content changed since the last
+// scan, diffs it against current mvp_items and creates a proposed scope
+// update. mvp_items are NEVER modified here — only on approval.
+export async function checkMvpFile(project: Project): Promise<CheckMvpResult> {
+  if (!project.mvp_file_path.trim()) return { status: "no_path" };
+
+  let file: { content: string; hash: string; mtime: string };
+  try {
+    file = await invoke("read_mvp_file", { path: project.mvp_file_path });
+  } catch (e) {
+    return { status: "not_found", message: e instanceof Error ? e.message : String(e) };
+  }
+
+  if (file.hash === project.mvp_file_hash) return { status: "unchanged" };
+
+  const existing = await findScopeUpdateByHash(project.id, file.hash);
+  if (existing) {
+    return existing.status === "pending" ? { status: "proposed" } : { status: "unchanged" };
+  }
+
+  let parsed = parseMvpMarkdown(file.content);
+  let usedAi = false;
+  if (parsed.length === 0 && (await hasApiKey())) {
+    const ai = await extractMvpItemsWithAI(file.content);
+    if (ai && ai.length) {
+      parsed = ai;
+      usedAi = true;
+    }
+  }
+
+  if (parsed.length === 0) {
+    return {
+      status: "no_items_found",
+      message:
+        'No checklist items found. Add items like "- [ ] Thing to build" under a "## Must have" heading, or add an API key in Settings for automatic extraction from prose.',
+    };
+  }
+
+  const current = await listMvpItems(project.id);
+  const diff = diffMvpItems(current, parsed, usedAi);
+
+  if (!hasMeaningfulDiff(diff)) {
+    // Nothing semantically changed (e.g. whitespace/typo fix) — record that we've
+    // seen this hash so we don't re-propose on every scan, but don't touch scope.
+    await setMvpFileSeen(project.id, file.hash, file.mtime);
+    return { status: "unchanged" };
+  }
+
+  const oldProgress = computeMvpProgress(current).pct;
+  const newProgress = computeMvpProgress(simulateApply(current, diff)).pct;
+
+  await insertScopeUpdate({
+    project_id: project.id,
+    file_hash: file.hash,
+    file_mtime: file.mtime,
+    diff_json: JSON.stringify(diff),
+    old_progress: oldProgress,
+    new_progress: newProgress,
+  });
+  return { status: "proposed" };
+}
+
+// Applies an approved (possibly edited-down) scope update: adds the selected
+// new items, cuts the selected removed items, applies all priority changes,
+// and advances the project's "seen" MVP file hash so we stop re-proposing it.
+export async function applyScopeUpdate(
+  scopeUpdateId: number,
+  project: Project,
+  selection: { addTitles: Set<string>; removeTitles: Set<string> }
+): Promise<void> {
+  const row = await getScopeUpdate(scopeUpdateId);
+  if (!row) return;
+  const diff = JSON.parse(row.diff_json) as ReturnType<typeof diffMvpItems>;
+
+  for (const added of diff.added) {
+    if (!selection.addTitles.has(added.title)) continue;
+    await insertMvpItem({
+      project_id: project.id,
+      title: added.title,
+      description: added.description,
+      priority: added.priority,
+      source: diff.usedAi ? "ai_extracted" : "mvp_file",
+    });
+  }
+
+  for (const removed of diff.removed) {
+    if (!selection.removeTitles.has(removed.title)) continue;
+    await cutMvpItemByTitle(project.id, removed.title);
+  }
+
+  for (const changed of diff.changed) {
+    const current = await listMvpItems(project.id);
+    const match = current.find(
+      (i) => i.title.trim().toLowerCase() === changed.title.trim().toLowerCase()
+    );
+    if (match) await updateMvpItemFields(match.id, { priority: changed.after.priority });
+  }
+
+  await setMvpFileSeen(project.id, row.file_hash, row.file_mtime);
+  await setScopeUpdateStatus(scopeUpdateId, "approved");
+
+  const items = await listMvpItems(project.id);
+  if (items.some((i) => i.status !== "cut") && project.progress_mode === "manual") {
+    await setProgressMode(project.id, "evidence");
+  }
+}
+
+// --- Folder tracking ---------------------------------------------------------
+
+const TRACKED_CATEGORIES: ScanCategory[] = ["code", "docs", "tests", "config", "dependencies"];
+
+export interface FolderScanResult {
+  changedCount: number;
+  changedFiles: string[]; // tracked-category files that are new or modified
+}
+
+// Scans the project folder (bounded, ignore-listed — see the Rust side),
+// diffs against the last snapshot, and — if the project is in evidence mode
+// with MVP items — proposes item status updates for anything the changed
+// files keyword-match. Manual/on-demand only; this does not run on a timer.
+export async function scanFolder(project: Project): Promise<FolderScanResult> {
+  if (!project.path.trim()) return { changedCount: 0, changedFiles: [] };
+
+  const mvpRel = relativeMvpPath(project);
+  const scanned: ScannedFile[] = await invoke("scan_project_folder", {
+    path: project.path,
+    mvpRelPath: mvpRel,
+  });
+
+  const previous = await getFolderSnapshot(project.id);
+  const prevByPath = new Map(previous.map((f) => [f.file_path, f]));
+
+  const changedFiles: string[] = [];
+  for (const f of scanned) {
+    const prev = prevByPath.get(f.path);
+    const isNewOrChanged =
+      !prev || (f.hash && prev.hash !== f.hash) || (!f.hash && (prev.mtime !== f.mtime || prev.size !== f.size));
+    if (isNewOrChanged && TRACKED_CATEGORIES.includes(f.category)) {
+      changedFiles.push(f.path);
+    }
+  }
+
+  const snapshot: FolderSnapshotEntry[] = scanned.map((f) => ({
+    project_id: project.id,
+    file_path: f.path,
+    category: f.category,
+    hash: f.hash,
+    mtime: f.mtime,
+    size: f.size,
+  }));
+  await replaceFolderSnapshot(project.id, snapshot);
+
+  if (changedFiles.length > 0 && project.progress_mode === "evidence") {
+    const items = await listMvpItems(project.id);
+    const matches = matchFilesToItems(changedFiles, items);
+    for (const m of matches) {
+      await upsertProposedItemUpdate({
+        project_id: project.id,
+        mvp_item_id: m.item.id,
+        suggested_status: "in_progress",
+        evidence: formatEvidence(m),
+        confidence: m.confidence,
+        source: "folder-scan",
+        session_id: "",
+      });
+    }
+  }
+
+  return { changedCount: changedFiles.length, changedFiles };
+}
+
+function relativeMvpPath(project: Project): string | null {
+  if (!project.mvp_file_path || !project.path) return null;
+  const base = project.path.replace(/\/+$/, "");
+  if (project.mvp_file_path.startsWith(base + "/")) {
+    return project.mvp_file_path.slice(base.length + 1);
+  }
+  if (!project.mvp_file_path.startsWith("/")) return project.mvp_file_path; // already relative
+  return null;
+}
+
+export type { MvpProgress } from "./diff";
+
+// Loads MVP progress for every evidence-mode project, keyed by project id —
+// used by the dashboard/cards so they don't each fetch independently.
+export async function loadMvpProgressMap(
+  projects: Project[]
+): Promise<Record<number, MvpProgress>> {
+  const map: Record<number, MvpProgress> = {};
+  for (const p of projects) {
+    if (p.progress_mode !== "evidence") continue;
+    const items = await listMvpItems(p.id);
+    map[p.id] = computeMvpProgress(items);
+  }
+  return map;
+}

@@ -4,8 +4,13 @@
 import Database from "@tauri-apps/plugin-sql";
 import type {
   CcEvent,
+  FolderSnapshotEntry,
+  MvpItem,
+  MvpItemStatus,
   Project,
   ProjectInput,
+  ProposedItemUpdate,
+  ProposedScopeUpdate,
   ProposedUpdate,
   Update,
   UpdateKind,
@@ -49,8 +54,8 @@ export async function getFocusProject(): Promise<Project | null> {
 export async function createProject(input: ProjectInput): Promise<number> {
   const db = await conn();
   const res = await db.execute(
-    `INSERT INTO projects (name, goal, status, progress, blocker, next_step, path)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT INTO projects (name, goal, status, progress, blocker, next_step, path, mvp_file_path)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       input.name,
       input.goal,
@@ -59,6 +64,7 @@ export async function createProject(input: ProjectInput): Promise<number> {
       input.blocker,
       input.next_step,
       input.path,
+      input.mvp_file_path,
     ]
   );
   return res.lastInsertId as number;
@@ -66,11 +72,17 @@ export async function createProject(input: ProjectInput): Promise<number> {
 
 export async function updateProject(id: number, input: ProjectInput): Promise<void> {
   const db = await conn();
+  // Clearing the MVP file path drops back to manual progress — evidence mode
+  // only makes sense while a file is actually connected.
+  const modeClause = input.mvp_file_path.trim()
+    ? ""
+    : `, progress_mode = 'manual'`;
   await db.execute(
     `UPDATE projects
        SET name = $1, goal = $2, status = $3, progress = $4,
-           blocker = $5, next_step = $6, path = $7, updated_at = datetime('now')
-     WHERE id = $8`,
+           blocker = $5, next_step = $6, path = $7, mvp_file_path = $8,
+           updated_at = datetime('now')${modeClause}
+     WHERE id = $9`,
     [
       input.name,
       input.goal,
@@ -79,8 +91,22 @@ export async function updateProject(id: number, input: ProjectInput): Promise<vo
       input.blocker,
       input.next_step,
       input.path,
+      input.mvp_file_path,
       id,
     ]
+  );
+}
+
+export async function setProgressMode(id: number, mode: "manual" | "evidence"): Promise<void> {
+  const db = await conn();
+  await db.execute(`UPDATE projects SET progress_mode = $1 WHERE id = $2`, [mode, id]);
+}
+
+export async function setMvpFileSeen(id: number, hash: string, mtime: string): Promise<void> {
+  const db = await conn();
+  await db.execute(
+    `UPDATE projects SET mvp_file_hash = $1, mvp_file_mtime = $2 WHERE id = $3`,
+    [hash, mtime, id]
   );
 }
 
@@ -274,4 +300,263 @@ export async function approveProposedUpdate(id: number): Promise<void> {
     [proposed.project_id]
   );
   await setProposedStatus(id, "approved");
+}
+
+// --- MVP items --------------------------------------------------------------
+
+export async function listMvpItems(projectId: number): Promise<MvpItem[]> {
+  const db = await conn();
+  return db.select<MvpItem[]>(
+    `SELECT * FROM mvp_items WHERE project_id = $1 ORDER BY
+       CASE priority WHEN 'must_have' THEN 0 WHEN 'should_have' THEN 1 ELSE 2 END,
+       id ASC`,
+    [projectId]
+  );
+}
+
+export async function insertMvpItem(item: {
+  project_id: number;
+  title: string;
+  description: string;
+  priority: MvpItem["priority"];
+  source: MvpItem["source"];
+}): Promise<number> {
+  const db = await conn();
+  const res = await db.execute(
+    `INSERT INTO mvp_items (project_id, title, description, priority, status, source)
+     VALUES ($1, $2, $3, $4, 'not_started', $5)`,
+    [item.project_id, item.title, item.description, item.priority, item.source]
+  );
+  return res.lastInsertId as number;
+}
+
+export async function updateMvpItemFields(
+  id: number,
+  fields: { priority?: MvpItem["priority"]; description?: string }
+): Promise<void> {
+  const db = await conn();
+  if (fields.priority !== undefined) {
+    await db.execute(
+      `UPDATE mvp_items SET priority = $1, updated_at = datetime('now') WHERE id = $2`,
+      [fields.priority, id]
+    );
+  }
+  if (fields.description !== undefined) {
+    await db.execute(
+      `UPDATE mvp_items SET description = $1, updated_at = datetime('now') WHERE id = $2`,
+      [fields.description, id]
+    );
+  }
+}
+
+// Direct manual override — the user editing an item themselves, not an AI
+// proposal, so it applies immediately with no approve/reject step.
+export async function setMvpItemStatus(
+  id: number,
+  status: MvpItemStatus,
+  evidence?: string
+): Promise<void> {
+  const db = await conn();
+  if (evidence !== undefined) {
+    await db.execute(
+      `UPDATE mvp_items SET status = $1, evidence = $2, updated_at = datetime('now') WHERE id = $3`,
+      [status, evidence, id]
+    );
+  } else {
+    await db.execute(
+      `UPDATE mvp_items SET status = $1, updated_at = datetime('now') WHERE id = $2`,
+      [status, id]
+    );
+  }
+}
+
+export async function cutMvpItemByTitle(projectId: number, title: string): Promise<void> {
+  const db = await conn();
+  await db.execute(
+    `UPDATE mvp_items SET status = 'cut', updated_at = datetime('now')
+     WHERE project_id = $1 AND lower(trim(title)) = lower(trim($2)) AND status != 'cut'`,
+    [projectId, title]
+  );
+}
+
+// --- Proposed scope updates (from MVP file diffs) ---------------------------
+
+export async function findScopeUpdateByHash(
+  projectId: number,
+  fileHash: string
+): Promise<ProposedScopeUpdate | null> {
+  const db = await conn();
+  const rows = await db.select<ProposedScopeUpdate[]>(
+    `SELECT * FROM proposed_scope_updates WHERE project_id = $1 AND file_hash = $2
+     ORDER BY id DESC LIMIT 1`,
+    [projectId, fileHash]
+  );
+  return rows[0] ?? null;
+}
+
+export async function insertScopeUpdate(u: {
+  project_id: number;
+  file_hash: string;
+  file_mtime: string;
+  diff_json: string;
+  old_progress: number;
+  new_progress: number;
+}): Promise<void> {
+  const db = await conn();
+  await db.execute(
+    `INSERT INTO proposed_scope_updates
+       (project_id, file_hash, file_mtime, diff_json, old_progress, new_progress)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [u.project_id, u.file_hash, u.file_mtime, u.diff_json, u.old_progress, u.new_progress]
+  );
+}
+
+export async function listPendingScopeUpdates(projectId: number): Promise<ProposedScopeUpdate[]> {
+  const db = await conn();
+  return db.select<ProposedScopeUpdate[]>(
+    `SELECT * FROM proposed_scope_updates WHERE project_id = $1 AND status = 'pending'
+     ORDER BY created_at DESC, id DESC`,
+    [projectId]
+  );
+}
+
+export async function getScopeUpdate(id: number): Promise<ProposedScopeUpdate | null> {
+  const db = await conn();
+  const rows = await db.select<ProposedScopeUpdate[]>(
+    `SELECT * FROM proposed_scope_updates WHERE id = $1`,
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function setScopeUpdateStatus(
+  id: number,
+  status: ProposedScopeUpdate["status"]
+): Promise<void> {
+  const db = await conn();
+  await db.execute(`UPDATE proposed_scope_updates SET status = $1 WHERE id = $2`, [status, id]);
+}
+
+// --- Proposed item updates (from Claude Code / folder evidence) ------------
+
+export async function listPendingItemUpdates(projectId: number): Promise<ProposedItemUpdate[]> {
+  const db = await conn();
+  return db.select<ProposedItemUpdate[]>(
+    `SELECT * FROM proposed_item_updates WHERE project_id = $1 AND status = 'pending'
+     ORDER BY created_at DESC, id DESC`,
+    [projectId]
+  );
+}
+
+// One pending proposal per MVP item at a time — new evidence merges into the
+// existing pending row instead of stacking duplicates.
+export async function upsertProposedItemUpdate(u: {
+  project_id: number;
+  mvp_item_id: number;
+  suggested_status: MvpItemStatus;
+  evidence: string;
+  confidence: ProposedItemUpdate["confidence"];
+  source: ProposedItemUpdate["source"];
+  session_id: string;
+}): Promise<void> {
+  const db = await conn();
+  const existing = await db.select<ProposedItemUpdate[]>(
+    `SELECT * FROM proposed_item_updates
+     WHERE project_id = $1 AND mvp_item_id = $2 AND status = 'pending'
+     ORDER BY id DESC LIMIT 1`,
+    [u.project_id, u.mvp_item_id]
+  );
+  if (existing[0]) {
+    await db.execute(
+      `UPDATE proposed_item_updates
+         SET suggested_status = $1, evidence = $2, confidence = $3, source = $4,
+             session_id = $5, created_at = datetime('now')
+       WHERE id = $6`,
+      [u.suggested_status, u.evidence, u.confidence, u.source, u.session_id, existing[0].id]
+    );
+  } else {
+    await db.execute(
+      `INSERT INTO proposed_item_updates
+         (project_id, mvp_item_id, suggested_status, evidence, confidence, source, session_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        u.project_id,
+        u.mvp_item_id,
+        u.suggested_status,
+        u.evidence,
+        u.confidence,
+        u.source,
+        u.session_id,
+      ]
+    );
+  }
+}
+
+export async function setItemUpdateStatus(
+  id: number,
+  status: ProposedItemUpdate["status"]
+): Promise<void> {
+  const db = await conn();
+  await db.execute(`UPDATE proposed_item_updates SET status = $1 WHERE id = $2`, [status, id]);
+}
+
+export async function getItemUpdate(id: number): Promise<ProposedItemUpdate | null> {
+  const db = await conn();
+  const rows = await db.select<ProposedItemUpdate[]>(
+    `SELECT * FROM proposed_item_updates WHERE id = $1`,
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+// Approve: apply the (possibly edited) status to the MVP item, then mark approved.
+export async function approveItemUpdate(id: number, applyStatus: MvpItemStatus): Promise<void> {
+  const proposed = await getItemUpdate(id);
+  if (!proposed) return;
+  await setMvpItemStatus(proposed.mvp_item_id, applyStatus, proposed.evidence);
+  await setItemUpdateStatus(id, "approved");
+}
+
+// --- Folder snapshot (for scan-to-scan diffing) -----------------------------
+
+export async function getFolderSnapshot(projectId: number): Promise<FolderSnapshotEntry[]> {
+  const db = await conn();
+  return db.select<FolderSnapshotEntry[]>(
+    `SELECT * FROM folder_snapshot WHERE project_id = $1`,
+    [projectId]
+  );
+}
+
+export async function countCcEvents(): Promise<number> {
+  const db = await conn();
+  const rows = await db.select<{ n: number }[]>(`SELECT COUNT(*) as n FROM cc_events`);
+  return rows[0]?.n ?? 0;
+}
+
+// Any proposed update (session summary, scope, or item) that the user has
+// actually acted on — used only to drive the first-run setup checklist.
+export async function countResolvedProposals(): Promise<number> {
+  const db = await conn();
+  const rows = await db.select<{ n: number }[]>(
+    `SELECT
+       (SELECT COUNT(*) FROM proposed_updates WHERE status != 'pending') +
+       (SELECT COUNT(*) FROM proposed_scope_updates WHERE status != 'pending') +
+       (SELECT COUNT(*) FROM proposed_item_updates WHERE status != 'pending') as n`
+  );
+  return rows[0]?.n ?? 0;
+}
+
+export async function replaceFolderSnapshot(
+  projectId: number,
+  files: FolderSnapshotEntry[]
+): Promise<void> {
+  const db = await conn();
+  await db.execute(`DELETE FROM folder_snapshot WHERE project_id = $1`, [projectId]);
+  for (const f of files) {
+    await db.execute(
+      `INSERT INTO folder_snapshot (project_id, file_path, category, hash, mtime, size)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [projectId, f.file_path, f.category, f.hash, f.mtime, f.size]
+    );
+  }
 }

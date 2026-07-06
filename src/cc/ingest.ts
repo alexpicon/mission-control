@@ -11,8 +11,11 @@ import {
   findProposedForSession,
   insertProposedUpdate,
   updateProposedContent,
+  listMvpItems,
+  upsertProposedItemUpdate,
 } from "../db";
 import { buildSummary } from "./summary";
+import { matchFilesToItems, formatEvidence } from "../mvp/evidence";
 
 // Match an event's cwd to a project by the longest stored path prefix.
 function matchProject(projects: Project[], cwd: string): Project | null {
@@ -79,17 +82,38 @@ async function refreshProposed(project: Project, sessionId: string): Promise<voi
   if (!turnEnded) return; // wait until a turn completes before proposing
 
   const existing = await findProposedForSession(project.id, sessionId);
-  if (existing && existing.status !== "pending") return; // already approved/rejected
-
   const { summary, filesChanged } = buildSummary(project, events);
-  if (existing) {
-    await updateProposedContent(existing.id, summary, filesChanged);
-  } else {
-    await insertProposedUpdate({
-      project_id: project.id,
-      session_id: sessionId,
-      summary,
-      files_changed: filesChanged,
-    });
+  if (!existing || existing.status === "pending") {
+    if (existing) {
+      await updateProposedContent(existing.id, summary, filesChanged);
+    } else {
+      await insertProposedUpdate({
+        project_id: project.id,
+        session_id: sessionId,
+        summary,
+        files_changed: filesChanged,
+      });
+    }
+  }
+
+  // Evidence-based progress: if this project has MVP items, propose item
+  // status changes from the files this session touched. Never marks an item
+  // "done" from Claude Code activity alone — only ever suggests in_progress,
+  // and only as a pending proposal the user must approve.
+  if (project.progress_mode === "evidence" && filesChanged) {
+    const items = await listMvpItems(project.id);
+    const changedFiles = filesChanged.split("\n").filter(Boolean);
+    const matches = matchFilesToItems(changedFiles, items);
+    for (const m of matches) {
+      await upsertProposedItemUpdate({
+        project_id: project.id,
+        mvp_item_id: m.item.id,
+        suggested_status: "in_progress",
+        evidence: formatEvidence(m),
+        confidence: m.confidence,
+        source: "claude-code",
+        session_id: sessionId,
+      });
+    }
   }
 }
