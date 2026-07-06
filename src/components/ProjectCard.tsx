@@ -1,4 +1,5 @@
 import type { Project } from "../types";
+import type { MvpProgress } from "../mvp/diff";
 import { StatusBadge } from "./StatusBadge";
 import { ProgressBar } from "./ProgressBar";
 import { StaleTag } from "./StaleTag";
@@ -6,11 +7,18 @@ import { relativeTime } from "../lib/time";
 
 export function ProjectCard({
   project,
+  mvpProgress,
   onOpen,
 }: {
   project: Project;
+  mvpProgress?: MvpProgress;
   onOpen: (id: number) => void;
 }) {
+  const evidence = project.progress_mode === "evidence" && mvpProgress;
+  const nextBestMove = evidence
+    ? mvpProgress.missingMust[0]?.title ?? project.next_step
+    : project.next_step;
+
   return (
     <button
       onClick={() => onOpen(project.id)}
@@ -28,17 +36,48 @@ export function ProjectCard({
         <StatusBadge status={project.status} />
       </div>
 
-      <ProgressBar value={project.progress} />
+      {evidence ? (
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+            <div
+              className="h-full rounded-full bg-emerald-600 transition-all"
+              style={{ width: `${mvpProgress.pct}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-xs tabular-nums text-zinc-500">
+            {mvpProgress.pct}% MVP
+          </span>
+        </div>
+      ) : (
+        <ProgressBar value={project.progress} />
+      )}
 
       <dl className="space-y-1 text-sm">
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-zinc-400">Blocker</dt>
-          <dd className="text-zinc-700">{project.blocker || "—"}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-zinc-400">Next</dt>
-          <dd className="text-zinc-700">{project.next_step || "—"}</dd>
-        </div>
+        {evidence ? (
+          <>
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-zinc-400">Blocked</dt>
+              <dd className="text-zinc-700">
+                {mvpProgress.blocked.length > 0 ? `${mvpProgress.blocked.length} item(s)` : "—"}
+              </dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-zinc-400">Next</dt>
+              <dd className="text-zinc-700">{nextBestMove || "—"}</dd>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-zinc-400">Blocker</dt>
+              <dd className="text-zinc-700">{project.blocker || "—"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-zinc-400">Next</dt>
+              <dd className="text-zinc-700">{project.next_step || "—"}</dd>
+            </div>
+          </>
+        )}
       </dl>
 
       <div className="flex items-center justify-between pt-1">

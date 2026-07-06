@@ -6,6 +6,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ProgressBar } from "../components/ProgressBar";
 import { StaleTag } from "../components/StaleTag";
 import { ProposedUpdates } from "../components/ProposedUpdates";
+import { MvpSection } from "../components/MvpSection";
 import { relativeTime } from "../lib/time";
 import {
   listUpdates,
@@ -133,7 +134,14 @@ export function ProjectDetail({
         )}
 
         <div className="mt-4">
-          <ProgressBar value={project.progress} />
+          {project.progress_mode === "evidence" ? (
+            <p className="text-xs text-zinc-400">
+              Evidence-based progress — see the MVP section below. Manual % is not used
+              while evidence mode is on.
+            </p>
+          ) : (
+            <ProgressBar value={project.progress} />
+          )}
         </div>
 
         <dl className="mt-4 space-y-1.5 text-sm">
@@ -156,6 +164,12 @@ export function ProjectDetail({
             <dt className="w-20 shrink-0 text-zinc-400">Folder</dt>
             <dd className="truncate font-mono text-xs text-zinc-600">
               {project.path || "—"}
+            </dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-20 shrink-0 text-zinc-400">MVP file</dt>
+            <dd className="truncate font-mono text-xs text-zinc-600">
+              {project.mvp_file_path || "—"}
             </dd>
           </div>
         </dl>
@@ -233,7 +247,10 @@ export function ProjectDetail({
         )}
       </div>
 
-      {/* Proposed updates (from Claude Code) — require explicit approval */}
+      {/* Evidence-based progress: MVP file, checklist, and proposed scope/item updates */}
+      <MvpSection project={project} onProjectChanged={onChanged} />
+
+      {/* Claude Code session log (free-text summaries) — require explicit approval */}
       <ProposedUpdates
         projectId={project.id}
         onApplied={async () => {

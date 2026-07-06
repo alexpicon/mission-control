@@ -11,6 +11,8 @@ import { Audit } from "./pages/Audit";
 import { Settings } from "./pages/Settings";
 import { isWidgetVisible, toggleWidget } from "./lib/widget";
 import { ingestInbox } from "./cc/ingest";
+import { loadMvpProgressMap } from "./mvp/sync";
+import type { MvpProgress } from "./mvp/diff";
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -22,9 +24,12 @@ export default function App() {
   const [editing, setEditing] = useState<Project | null>(null);
 
   const [widgetOn, setWidgetOn] = useState(false);
+  const [mvpProgress, setMvpProgress] = useState<Record<number, MvpProgress>>({});
 
   async function reload() {
-    setProjects(await listProjects());
+    const p = await listProjects();
+    setProjects(p);
+    setMvpProgress(await loadMvpProgressMap(p));
   }
 
   useEffect(() => {
@@ -111,6 +116,7 @@ export default function App() {
         ) : view.name === "dashboard" ? (
           <Dashboard
             projects={projects}
+            mvpProgress={mvpProgress}
             onOpen={(id) => setView({ name: "project", id })}
             onNewProject={openNew}
           />

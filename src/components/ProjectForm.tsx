@@ -10,6 +10,7 @@ const EMPTY: ProjectInput = {
   blocker: "",
   next_step: "",
   path: "",
+  mvp_file_path: "",
 };
 
 function fromProject(p: Project): ProjectInput {
@@ -21,6 +22,7 @@ function fromProject(p: Project): ProjectInput {
     blocker: p.blocker,
     next_step: p.next_step,
     path: p.path,
+    mvp_file_path: p.mvp_file_path,
   };
 }
 
@@ -91,39 +93,22 @@ export function ProjectForm({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls} htmlFor="pf-status">
-                Status
-              </label>
-              <select
-                id="pf-status"
-                className={inputCls}
-                value={form.status}
-                onChange={(e) => set("status", e.target.value as Status)}
-              >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="pf-progress">
-                Progress: {form.progress}%
-              </label>
-              <input
-                id="pf-progress"
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                className="mt-2 w-full accent-zinc-800"
-                value={form.progress}
-                onChange={(e) => set("progress", Number(e.target.value))}
-              />
-            </div>
+          <div>
+            <label className={labelCls} htmlFor="pf-status">
+              Status
+            </label>
+            <select
+              id="pf-status"
+              className={inputCls}
+              value={form.status}
+              onChange={(e) => set("status", e.target.value as Status)}
+            >
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -167,6 +152,43 @@ export function ProjectForm({
               placeholder="/Users/you/code/my-project"
             />
           </div>
+
+          <div>
+            <label className={labelCls} htmlFor="pf-mvp">
+              MVP file path{" "}
+              <span className="font-normal text-zinc-400">
+                (optional — enables evidence-based progress)
+              </span>
+            </label>
+            <input
+              id="pf-mvp"
+              className={inputCls}
+              value={form.mvp_file_path}
+              onChange={(e) => set("mvp_file_path", e.target.value)}
+              placeholder="docs/MVP.md"
+            />
+          </div>
+
+          <details className="rounded-lg border border-zinc-200 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-zinc-500">
+              Manual progress % (fallback only — used until an MVP file takes over)
+            </summary>
+            <div className="mt-3">
+              <label className={labelCls} htmlFor="pf-progress">
+                Progress: {form.progress}%
+              </label>
+              <input
+                id="pf-progress"
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                className="mt-2 w-full accent-zinc-800"
+                value={form.progress}
+                onChange={(e) => set("progress", Number(e.target.value))}
+              />
+            </div>
+          </details>
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
