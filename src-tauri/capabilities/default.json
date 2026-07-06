@@ -17,6 +17,7 @@
     "core:window:allow-is-visible",
     "opener:default",
     "sql:default",
+    "sql:allow-execute",
     {
       "identifier": "http:default",
       "allow": [

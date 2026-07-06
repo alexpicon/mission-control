@@ -44,8 +44,9 @@ export default function App() {
       try {
         const n = await ingestInbox();
         if (active && n > 0) await reload();
-      } catch {
-        // ignore transient ingest errors; next tick retries
+      } catch (e) {
+        // Surface ingest errors to the devtools console; never crash the app.
+        console.error("Claude Code ingest failed:", e);
       }
     }
     pump();
