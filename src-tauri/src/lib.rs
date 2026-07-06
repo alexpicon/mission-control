@@ -1,6 +1,8 @@
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 // Mission Control — local SQLite schema.
@@ -63,6 +65,69 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
   status        TEXT    NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
   created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+"#;
+
+// Evidence-based progress: MVP file link, parsed MVP items, proposed scope updates
+// (from MVP file diffs), proposed item updates (from Claude Code / folder evidence),
+// and a folder snapshot used to detect what changed between scans.
+const SCHEMA_V3: &str = r#"
+ALTER TABLE projects ADD COLUMN mvp_file_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN mvp_file_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN mvp_file_mtime TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN progress_mode TEXT NOT NULL DEFAULT 'manual';
+
+CREATE TABLE IF NOT EXISTS mvp_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL,
+  title       TEXT    NOT NULL,
+  description TEXT    NOT NULL DEFAULT '',
+  priority    TEXT    NOT NULL DEFAULT 'should_have', -- must_have | should_have | nice_to_have
+  status      TEXT    NOT NULL DEFAULT 'not_started',  -- not_started | in_progress | blocked | done | cut
+  evidence    TEXT    NOT NULL DEFAULT '',
+  confidence  TEXT    NOT NULL DEFAULT 'low',          -- low | medium | high
+  source      TEXT    NOT NULL DEFAULT 'mvp_file',     -- mvp_file | ai_extracted | manual
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS proposed_scope_updates (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id    INTEGER NOT NULL,
+  file_hash     TEXT    NOT NULL DEFAULT '',
+  file_mtime    TEXT    NOT NULL DEFAULT '',
+  diff_json     TEXT    NOT NULL,
+  old_progress  INTEGER NOT NULL DEFAULT 0,
+  new_progress  INTEGER NOT NULL DEFAULT 0,
+  status        TEXT    NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS proposed_item_updates (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id       INTEGER NOT NULL,
+  mvp_item_id      INTEGER NOT NULL,
+  suggested_status TEXT    NOT NULL,
+  evidence         TEXT    NOT NULL DEFAULT '',
+  confidence       TEXT    NOT NULL DEFAULT 'low',
+  source           TEXT    NOT NULL DEFAULT 'claude-code', -- claude-code | folder-scan
+  session_id       TEXT    NOT NULL DEFAULT '',
+  status           TEXT    NOT NULL DEFAULT 'pending',      -- pending | approved | rejected
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (mvp_item_id) REFERENCES mvp_items(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS folder_snapshot (
+  project_id  INTEGER NOT NULL,
+  file_path   TEXT    NOT NULL,
+  category    TEXT    NOT NULL DEFAULT '',
+  hash        TEXT    NOT NULL DEFAULT '',
+  mtime       TEXT    NOT NULL DEFAULT '',
+  size        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (project_id, file_path)
 );
 "#;
 
@@ -202,6 +267,304 @@ fn drain_cc_inbox() -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish().to_string()
+}
+
+fn epoch_secs(t: SystemTime) -> String {
+    t.duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default()
+}
+
+#[derive(serde::Serialize, Debug)]
+struct MvpFileResult {
+    content: String,
+    hash: String,
+    mtime: String,
+}
+
+/// Read the connected MVP/spec file and return its content plus a content hash
+/// and modified time, used to detect when the file has changed since last scan.
+#[tauri::command]
+fn read_mvp_file(path: String) -> Result<MvpFileResult, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err(format!("MVP file not found: {path}"));
+    }
+    let content = fs::read_to_string(&p).map_err(|e| format!("Could not read file: {e}"))?;
+    let hash = hash_bytes(content.as_bytes());
+    let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
+    let mtime = meta
+        .modified()
+        .map(epoch_secs)
+        .map_err(|e| e.to_string())?;
+    Ok(MvpFileResult { content, hash, mtime })
+}
+
+const IGNORE_DIRS: [&str; 15] = [
+    "node_modules",
+    "dist",
+    "build",
+    ".git",
+    ".next",
+    "target",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "coverage",
+    ".cache",
+    ".turbo",
+    "gen",
+    ".vscode",
+    ".idea",
+];
+
+const MAX_SCAN_FILES: usize = 4000;
+const MAX_SCAN_DEPTH: usize = 14;
+const MAX_HASH_BYTES: u64 = 300_000;
+
+fn is_sensitive_name(lower: &str) -> bool {
+    lower == ".env"
+        || lower.starts_with(".env.")
+        || lower.contains("secret")
+        || lower.contains("credential")
+        || lower.contains("apikey")
+        || lower.contains("api_key")
+        || lower.ends_with(".pem")
+        || lower.ends_with(".key")
+        || lower.ends_with(".p12")
+}
+
+fn ext_of(lower: &str) -> &str {
+    match lower.rfind('.') {
+        Some(i) => &lower[i + 1..],
+        None => "",
+    }
+}
+
+// Categorize a file for evidence purposes. Returns None for anything we should
+// not track at all (binaries, media, junk, sensitive files) — these are never
+// returned to the frontend, never hashed, never sent anywhere.
+fn classify(rel_path: &str, is_mvp_file: bool) -> Option<&'static str> {
+    if is_mvp_file {
+        return Some("mvp_scope");
+    }
+    let lower = rel_path.to_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    if is_sensitive_name(name) {
+        return None;
+    }
+    let ext = ext_of(name);
+    // Lock files are dependency evidence, not junk — check before the binary exclusion.
+    if name == "package-lock.json"
+        || name == "cargo.lock"
+        || name == "yarn.lock"
+        || name == "pnpm-lock.yaml"
+    {
+        return Some("dependencies");
+    }
+    match ext {
+        "png" | "jpg" | "jpeg" | "gif" | "svg" | "ico" | "webp" | "bmp" | "mp4" | "mov" | "webm"
+        | "avi" | "pdf" | "zip" | "tar" | "gz" | "woff" | "woff2" | "ttf" | "otf" | "eot"
+        | "icns" | "wasm" | "db" | "sqlite" | "sqlite3" | "lock" => {
+            return None;
+        }
+        _ => {}
+    }
+    if name.contains("test") || name.contains("spec") || lower.contains("__tests__/") {
+        return Some("tests");
+    }
+    if ext == "md" || ext == "mdx" || ext == "txt" {
+        return Some("docs");
+    }
+    if matches!(ext, "json" | "toml" | "yaml" | "yml")
+        || name == "dockerfile"
+        || name.starts_with(".env.example")
+    {
+        return Some("config");
+    }
+    if matches!(
+        ext,
+        "ts" | "tsx" | "js" | "jsx" | "rs" | "py" | "go" | "java" | "kt" | "rb" | "css" | "scss"
+            | "html" | "swift" | "c" | "cpp" | "h" | "hpp"
+    ) {
+        return Some("code");
+    }
+    None // unknown extension: skip rather than guess
+}
+
+#[derive(serde::Serialize)]
+struct ScannedFile {
+    path: String,
+    category: String,
+    hash: String,
+    mtime: String,
+    size: u64,
+}
+
+/// Walk a project folder (bounded depth/count, skipping junk/sensitive/binary
+/// files) and return metadata for files worth tracking as evidence. File
+/// contents are only read (and hashed) for small, already-classified text
+/// files; sensitive and ignored files are never read or returned at all.
+#[tauri::command]
+fn scan_project_folder(path: String, mvp_rel_path: Option<String>) -> Result<Vec<ScannedFile>, String> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err(format!("Folder does not exist: {path}"));
+    }
+    let mvp_rel = mvp_rel_path.map(|s| s.trim_start_matches('/').to_string());
+
+    let mut out = Vec::new();
+    let mut stack: Vec<(PathBuf, usize)> = vec![(root.clone(), 0)];
+
+    while let Some((dir, depth)) = stack.pop() {
+        if out.len() >= MAX_SCAN_FILES || depth > MAX_SCAN_DEPTH {
+            continue;
+        }
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            if out.len() >= MAX_SCAN_FILES {
+                break;
+            }
+            let file_type = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if file_type.is_symlink() {
+                continue; // never follow symlinks (avoids loops and escaping the project root)
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if file_type.is_dir() {
+                if IGNORE_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                stack.push((entry.path(), depth + 1));
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+            let full = entry.path();
+            let rel = full
+                .strip_prefix(&root)
+                .unwrap_or(&full)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let is_mvp = mvp_rel.as_deref() == Some(rel.as_str());
+            let category = match classify(&rel, is_mvp) {
+                Some(c) => c,
+                None => continue,
+            };
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let size = meta.len();
+            let mtime = meta.modified().map(epoch_secs).unwrap_or_default();
+            let hash = if size <= MAX_HASH_BYTES {
+                fs::read(&full).map(|b| hash_bytes(&b)).unwrap_or_default()
+            } else {
+                String::new() // large file: rely on size+mtime for change detection
+            };
+            out.push(ScannedFile {
+                path: rel,
+                category: category.to_string(),
+                hash,
+                mtime,
+                size,
+            });
+        }
+    }
+
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo_root() -> PathBuf {
+        // src-tauri/ -> repo root
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    #[test]
+    fn classify_recognizes_real_repo_files() {
+        assert_eq!(classify("src/App.tsx", false), Some("code"));
+        assert_eq!(classify("src-tauri/src/lib.rs", false), Some("code"));
+        assert_eq!(classify("docs/MVP.md", false), Some("docs"));
+        assert_eq!(classify("package-lock.json", false), Some("dependencies"));
+        assert_eq!(classify("src-tauri/Cargo.lock", false), Some("dependencies"));
+        assert_eq!(classify("src-tauri/tauri.conf.json", false), Some("config"));
+        assert_eq!(classify("docs/MVP.md", true), Some("mvp_scope"));
+    }
+
+    #[test]
+    fn classify_excludes_sensitive_and_junk() {
+        assert_eq!(classify(".env", false), None);
+        assert_eq!(classify(".env.local", false), None);
+        assert_eq!(classify("secrets/prod.key", false), None);
+        assert_eq!(classify("src-tauri/icons/icon.png", false), None);
+        assert_eq!(classify("public/vite.svg", false), None);
+    }
+
+    #[test]
+    fn read_mvp_file_reads_real_docs_mvp_md() {
+        let path = repo_root().join("docs/MVP.md");
+        let result = read_mvp_file(path.to_string_lossy().to_string()).expect("should read real file");
+        assert!(result.content.contains("Must have"));
+        assert!(!result.hash.is_empty());
+        assert!(!result.mtime.is_empty());
+
+        // Same content -> same hash (change detection depends on this).
+        let again = read_mvp_file(path.to_string_lossy().to_string()).unwrap();
+        assert_eq!(result.hash, again.hash);
+    }
+
+    #[test]
+    fn read_mvp_file_errors_clearly_on_missing_file() {
+        let err = read_mvp_file("/definitely/not/a/real/path/MVP.md".to_string());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn scan_project_folder_finds_real_files_and_skips_junk() {
+        let root = repo_root();
+        let files = scan_project_folder(root.to_string_lossy().to_string(), Some("docs/MVP.md".to_string()))
+            .expect("scan should succeed on the real repo");
+
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"src/App.tsx"), "should find src/App.tsx");
+        assert!(paths.contains(&"docs/MVP.md"), "should find docs/MVP.md");
+        assert!(
+            !paths.iter().any(|p| p.contains("node_modules")),
+            "must never descend into node_modules"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("src-tauri/target")),
+            "must never descend into target"
+        );
+        assert!(
+            !paths.iter().any(|p| p.ends_with(".env") || p.ends_with(".env.local")),
+            "must never return sensitive files"
+        );
+
+        let mvp_entry = files.iter().find(|f| f.path == "docs/MVP.md").unwrap();
+        assert_eq!(mvp_entry.category, "mvp_scope");
+        assert!(!mvp_entry.hash.is_empty(), "small text file should be hashed");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -217,6 +580,12 @@ pub fn run() {
             sql: SCHEMA_V2,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "evidence-based progress: mvp items, scope updates, folder snapshot",
+            sql: SCHEMA_V3,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -230,7 +599,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connect_claude_code,
             disconnect_claude_code,
-            drain_cc_inbox
+            drain_cc_inbox,
+            read_mvp_file,
+            scan_project_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
