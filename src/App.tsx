@@ -10,6 +10,7 @@ import { Chat } from "./pages/Chat";
 import { Audit } from "./pages/Audit";
 import { Settings } from "./pages/Settings";
 import { isWidgetVisible, toggleWidget } from "./lib/widget";
+import { ingestInbox } from "./cc/ingest";
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -32,6 +33,27 @@ export default function App() {
       setLoading(false);
       setWidgetOn(await isWidgetVisible());
     })();
+  }, []);
+
+  // Ingest Claude Code hook events while the app is open. Events written while
+  // it was closed are picked up here too. Reload projects if anything landed
+  // (a proposed update may have appeared / staleness may change on approval).
+  useEffect(() => {
+    let active = true;
+    async function pump() {
+      try {
+        const n = await ingestInbox();
+        if (active && n > 0) await reload();
+      } catch {
+        // ignore transient ingest errors; next tick retries
+      }
+    }
+    pump();
+    const id = setInterval(pump, 8000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
   }, []);
 
   function openNew() {
