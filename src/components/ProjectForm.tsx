@@ -9,6 +9,7 @@ const EMPTY: ProjectInput = {
   progress: 0,
   blocker: "",
   next_step: "",
+  path: "",
 };
 
 function fromProject(p: Project): ProjectInput {
@@ -19,6 +20,7 @@ function fromProject(p: Project): ProjectInput {
     progress: p.progress,
     blocker: p.blocker,
     next_step: p.next_step,
+    path: p.path,
   };
 }
 
@@ -147,6 +149,22 @@ export function ProjectForm({
               value={form.next_step}
               onChange={(e) => set("next_step", e.target.value)}
               placeholder="The single next action"
+            />
+          </div>
+
+          <div>
+            <label className={labelCls} htmlFor="pf-path">
+              Folder path{" "}
+              <span className="font-normal text-zinc-400">
+                (optional — enables Claude Code tracking)
+              </span>
+            </label>
+            <input
+              id="pf-path"
+              className={inputCls}
+              value={form.path}
+              onChange={(e) => set("path", e.target.value)}
+              placeholder="/Users/you/code/my-project"
             />
           </div>
         </div>
