@@ -180,3 +180,37 @@ export interface FolderSnapshotEntry {
   mtime: string;
   size: number;
 }
+
+// --- XP + achievements ------------------------------------------------------
+
+// One permanent record of a shipped thing. XP (and therefore level) is the sum
+// of these — append-only, so it never decays. At most one per mvp_item_id.
+export interface ShipEvent {
+  id: number;
+  project_id: number;
+  mvp_item_id: number | null;
+  title: string;
+  priority: MvpPriority;
+  xp: number;
+  created_at: string;
+}
+
+export interface UnlockedAchievement {
+  id: number;
+  key: string;
+  project_id: number; // 0 = global
+  unlocked_at: string;
+}
+
+// Result of a ship action, used to drive the celebration toast.
+export interface ShipResult {
+  shipped: boolean; // false if it was already shipped (no double award)
+  xpAwarded: number;
+  title: string;
+  totalXpBefore: number;
+  totalXpAfter: number;
+  levelBefore: number;
+  levelAfter: number;
+  leveledUp: boolean;
+  newAchievements: string[]; // achievement keys unlocked by this ship
+}

@@ -131,6 +131,32 @@ CREATE TABLE IF NOT EXISTS folder_snapshot (
 );
 "#;
 
+// XP + achievements. XP is DERIVED from ship_events (append-only) — shipping a
+// thing is permanent, so the level never decays even if a project stalls or an
+// item is later un-checked. Progress % (from mvp_items) stays a separate,
+// honest, can-go-down number. One ship_event per item enforces "no double XP".
+const SCHEMA_V4: &str = r#"
+CREATE TABLE IF NOT EXISTS ship_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL,
+  mvp_item_id INTEGER,                              -- null only if the item was later deleted
+  title       TEXT    NOT NULL DEFAULT '',
+  priority    TEXT    NOT NULL DEFAULT 'should_have',
+  xp          INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ship_events_item ON ship_events(mvp_item_id);
+
+CREATE TABLE IF NOT EXISTS achievements_unlocked (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  key         TEXT    NOT NULL,
+  project_id  INTEGER NOT NULL DEFAULT 0,           -- 0 = global; else per-project
+  unlocked_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (key, project_id)
+);
+"#;
+
 // The shell command every hook runs: dump the event JSON (from stdin) to a
 // uniquely-named file in the shared inbox. No server, no port. `$$` is the hook
 // process PID; combined with the epoch second it is unique per invocation.
@@ -584,6 +610,12 @@ pub fn run() {
             version: 3,
             description: "evidence-based progress: mvp items, scope updates, folder snapshot",
             sql: SCHEMA_V3,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 4,
+            description: "xp + achievements: ship_events, achievements_unlocked",
+            sql: SCHEMA_V4,
             kind: MigrationKind::Up,
         },
     ];
