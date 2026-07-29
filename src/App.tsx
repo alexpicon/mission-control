@@ -13,6 +13,10 @@ import { isWidgetVisible, toggleWidget } from "./lib/widget";
 import { ingestInbox } from "./cc/ingest";
 import { loadMvpProgressMap } from "./mvp/sync";
 import type { MvpProgress } from "./mvp/diff";
+import type { ShipResult } from "./types";
+import { loadXpSummary } from "./xp/summary";
+import { levelInfo, type LevelInfo } from "./xp/model";
+import { CelebrationToasts, type Toast } from "./components/CelebrationToasts";
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -25,11 +29,32 @@ export default function App() {
 
   const [widgetOn, setWidgetOn] = useState(false);
   const [mvpProgress, setMvpProgress] = useState<Record<number, MvpProgress>>({});
+  const [xpLevel, setXpLevel] = useState<LevelInfo>(levelInfo(0));
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   async function reload() {
     const p = await listProjects();
     setProjects(p);
-    setMvpProgress(await loadMvpProgressMap(p));
+    const [mvp, xp] = await Promise.all([loadMvpProgressMap(p), loadXpSummary()]);
+    setMvpProgress(mvp);
+    setXpLevel(xp.level);
+  }
+
+  // Called whenever something ships. Celebrates the noteworthy ones and
+  // refreshes level/progress. Uses the XP delta as a stable toast id so we
+  // never call Date.now()/Math.random() during render.
+  function handleShipped(r: ShipResult) {
+    if (r.shipped || r.leveledUp || r.newAchievements.length > 0) {
+      setToasts((prev) => [
+        ...prev,
+        { ...r, toastId: (prev[prev.length - 1]?.toastId ?? 0) + 1 },
+      ]);
+    }
+    reload();
+  }
+
+  function dismissToast(id: number) {
+    setToasts((prev) => prev.filter((t) => t.toastId !== id));
   }
 
   useEffect(() => {
@@ -108,6 +133,7 @@ export default function App() {
         onNewProject={openNew}
         onToggleWidget={handleToggleWidget}
         widgetOn={widgetOn}
+        level={xpLevel}
       />
 
       <main className="flex-1 overflow-y-auto p-6">
@@ -130,6 +156,7 @@ export default function App() {
               await reload();
             }}
             onChanged={reload}
+            onShipped={handleShipped}
           />
         ) : view.name === "chat" ? (
           <Chat
@@ -156,6 +183,8 @@ export default function App() {
           }}
         />
       )}
+
+      <CelebrationToasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

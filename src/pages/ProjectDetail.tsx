@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, Update, UpdateKind } from "../types";
+import type { Project, ShipResult, Update, UpdateKind } from "../types";
 import { UPDATE_KINDS } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
 import { ProgressBar } from "../components/ProgressBar";
@@ -29,12 +29,14 @@ export function ProjectDetail({
   onEdit,
   onDeleted,
   onChanged,
+  onShipped,
 }: {
   project: Project;
   onBack: () => void;
   onEdit: (p: Project) => void;
   onDeleted: () => void;
   onChanged: () => void;
+  onShipped: (r: ShipResult) => void;
 }) {
   const [updates, setUpdates] = useState<Update[]>([]);
   const [kind, setKind] = useState<UpdateKind>("progress");
@@ -247,8 +249,8 @@ export function ProjectDetail({
         )}
       </div>
 
-      {/* Evidence-based progress: MVP file, checklist, and proposed scope/item updates */}
-      <MvpSection project={project} onProjectChanged={onChanged} />
+      {/* Evidence-based progress: MVP file, checklist, XP shipping, scope/item updates */}
+      <MvpSection project={project} onProjectChanged={onChanged} onShipped={onShipped} />
 
       {/* Claude Code session log (free-text summaries) — require explicit approval */}
       <ProposedUpdates

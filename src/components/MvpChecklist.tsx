@@ -1,8 +1,9 @@
 import { useState } from "react";
-import type { MvpItem, MvpItemStatus, MvpPriority } from "../types";
+import type { MvpItem, MvpItemStatus, MvpPriority, Project, ShipResult } from "../types";
 import { MVP_ITEM_STATUSES } from "../types";
 import type { MvpProgress } from "../mvp/diff";
 import { setMvpItemStatus } from "../db";
+import { shipMvpItem } from "../xp/ship";
 
 const PRIORITY_LABEL: Record<MvpPriority, string> = {
   must_have: "Must have",
@@ -26,7 +27,17 @@ const STATUS_LABEL: Record<MvpItemStatus, string> = {
   cut: "Cut",
 };
 
-function Row({ item, onChanged }: { item: MvpItem; onChanged: () => void }) {
+function Row({
+  item,
+  project,
+  onChanged,
+  onShipped,
+}: {
+  item: MvpItem;
+  project: Project;
+  onChanged: () => void;
+  onShipped: (r: ShipResult) => void;
+}) {
   const [busy, setBusy] = useState(false);
 
   async function changeStatus(status: MvpItemStatus) {
@@ -38,6 +49,19 @@ function Row({ item, onChanged }: { item: MvpItem; onChanged: () => void }) {
       setBusy(false);
     }
   }
+
+  async function ship() {
+    setBusy(true);
+    try {
+      const result = await shipMvpItem(item, project);
+      onShipped(result);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const shippable = item.status !== "done" && item.status !== "cut";
 
   return (
     <li className="flex items-start justify-between gap-3 border-b border-zinc-100 py-2 last:border-0">
@@ -54,6 +78,15 @@ function Row({ item, onChanged }: { item: MvpItem; onChanged: () => void }) {
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {shippable && (
+          <button
+            onClick={ship}
+            disabled={busy}
+            className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+          >
+            Ship it
+          </button>
+        )}
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[item.status]}`}>
           {STATUS_LABEL[item.status]}
         </span>
@@ -78,11 +111,15 @@ function Row({ item, onChanged }: { item: MvpItem; onChanged: () => void }) {
 export function MvpChecklist({
   items,
   progress,
+  project,
   onChanged,
+  onShipped,
 }: {
   items: MvpItem[];
   progress: MvpProgress;
+  project: Project;
   onChanged: () => void;
+  onShipped: (r: ShipResult) => void;
 }) {
   const groups: { priority: MvpPriority; items: MvpItem[] }[] = (
     ["must_have", "should_have", "nice_to_have"] as MvpPriority[]
@@ -156,7 +193,13 @@ export function MvpChecklist({
                 </p>
                 <ul>
                   {g.items.map((item) => (
-                    <Row key={item.id} item={item} onChanged={onChanged} />
+                    <Row
+                      key={item.id}
+                      item={item}
+                      project={project}
+                      onChanged={onChanged}
+                      onShipped={onShipped}
+                    />
                   ))}
                 </ul>
               </div>

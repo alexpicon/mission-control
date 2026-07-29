@@ -1,4 +1,6 @@
 import type { View, Nav } from "../nav";
+import type { LevelInfo } from "../xp/model";
+import { LevelBadge } from "./LevelBadge";
 
 const NAV: { label: string; view: View }[] = [
   { label: "Dashboard", view: { name: "dashboard" } },
@@ -13,12 +15,14 @@ export function Sidebar({
   onNewProject,
   onToggleWidget,
   widgetOn,
+  level,
 }: {
   current: View["name"];
   navigate: Nav;
   onNewProject: () => void;
   onToggleWidget: () => void;
   widgetOn: boolean;
+  level: LevelInfo;
 }) {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-200 bg-white px-3 py-4">
@@ -53,7 +57,8 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="mt-auto pt-4">
+      <div className="mt-auto space-y-2 pt-4">
+        <LevelBadge level={level} />
         <button
           onClick={onToggleWidget}
           className="flex w-full items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
