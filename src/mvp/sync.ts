@@ -5,9 +5,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   FolderSnapshotEntry,
+  MvpItem,
+  ParsedMvpItem,
   Project,
   ScanCategory,
   ScannedFile,
+  ShipResult,
 } from "../types";
 import {
   cutMvpItemByTitle,
@@ -19,6 +22,7 @@ import {
   listMvpItems,
   replaceFolderSnapshot,
   setMvpFileSeen,
+  setMvpItemStatus,
   setProgressMode,
   setScopeUpdateStatus,
   updateMvpItemFields,
@@ -30,33 +34,59 @@ import type { MvpProgress } from "./diff";
 import { matchFilesToItems, formatEvidence } from "./evidence";
 import { extractMvpItemsWithAI } from "../ai/mvpExtract";
 import { hasApiKey } from "../ai/provider";
+import { shipMvpItem } from "../xp/ship";
 
-export type CheckMvpResult =
-  | { status: "no_path" }
-  | { status: "not_found"; message: string }
-  | { status: "unchanged" }
-  | { status: "proposed" }
-  | { status: "no_items_found"; message: string };
+export interface CheckMvpResult {
+  status: "no_path" | "not_found" | "no_items_found" | "unchanged" | "proposed";
+  message?: string;
+  // Items auto-shipped because their checkbox flipped [ ] -> [x] in the file.
+  // Completion is applied automatically (it's the user's own gesture in their
+  // own file); only SCOPE changes (add/remove/re-prioritize) need review.
+  shipResults: ShipResult[];
+  scopeProposed: boolean;
+}
 
-// Re-reads the connected MVP file, and if its content changed since the last
-// scan, diffs it against current mvp_items and creates a proposed scope
-// update. mvp_items are NEVER modified here — only on approval.
+// Matches parsed checkbox state to current items by title, and applies
+// completion changes: [ ]->[x] ships the item (auto, awards XP once);
+// [x]->[ ] un-ships it (status back to not_started — XP already earned stays).
+async function syncCompletions(
+  project: Project,
+  current: MvpItem[],
+  parsed: ParsedMvpItem[]
+): Promise<ShipResult[]> {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const parsedByTitle = new Map(parsed.map((p) => [norm(p.title), p]));
+  const results: ShipResult[] = [];
+
+  for (const item of current) {
+    if (item.status === "cut") continue;
+    const p = parsedByTitle.get(norm(item.title));
+    if (!p) continue;
+    if (p.done && item.status !== "done") {
+      results.push(await shipMvpItem(item, project));
+    } else if (!p.done && item.status === "done") {
+      await setMvpItemStatus(item.id, "not_started");
+    }
+  }
+  return results;
+}
+
+// Re-reads the connected MVP file. Applies checkbox completion changes
+// automatically (with XP), and if the file's SCOPE changed (items added,
+// removed, or re-prioritized) creates a proposed scope update for review.
+// Scope is NEVER changed here without approval; completion always is.
 export async function checkMvpFile(project: Project): Promise<CheckMvpResult> {
-  if (!project.mvp_file_path.trim()) return { status: "no_path" };
+  const base: CheckMvpResult = { status: "unchanged", shipResults: [], scopeProposed: false };
+  if (!project.mvp_file_path.trim()) return { ...base, status: "no_path" };
 
   let file: { content: string; hash: string; mtime: string };
   try {
     file = await invoke("read_mvp_file", { path: project.mvp_file_path });
   } catch (e) {
-    return { status: "not_found", message: e instanceof Error ? e.message : String(e) };
+    return { ...base, status: "not_found", message: e instanceof Error ? e.message : String(e) };
   }
 
-  if (file.hash === project.mvp_file_hash) return { status: "unchanged" };
-
-  const existing = await findScopeUpdateByHash(project.id, file.hash);
-  if (existing) {
-    return existing.status === "pending" ? { status: "proposed" } : { status: "unchanged" };
-  }
+  if (file.hash === project.mvp_file_hash) return base; // seen this exact content already
 
   let parsed = parseMvpMarkdown(file.content);
   let usedAi = false;
@@ -70,6 +100,7 @@ export async function checkMvpFile(project: Project): Promise<CheckMvpResult> {
 
   if (parsed.length === 0) {
     return {
+      ...base,
       status: "no_items_found",
       message:
         'No checklist items found. Add items like "- [ ] Thing to build" under a "## Must have" heading, or add an API key in Settings for automatic extraction from prose.',
@@ -77,27 +108,39 @@ export async function checkMvpFile(project: Project): Promise<CheckMvpResult> {
   }
 
   const current = await listMvpItems(project.id);
-  const diff = diffMvpItems(current, parsed, usedAi);
 
-  if (!hasMeaningfulDiff(diff)) {
-    // Nothing semantically changed (e.g. whitespace/typo fix) — record that we've
-    // seen this hash so we don't re-propose on every scan, but don't touch scope.
+  // 1) Completion sync (auto, with XP) — always runs.
+  const shipResults = await syncCompletions(project, current, parsed);
+
+  // 2) Scope diff (add/remove/re-prioritize) — needs review.
+  const existingScope = await findScopeUpdateByHash(project.id, file.hash);
+  const diff = diffMvpItems(current, parsed, usedAi);
+  const scopeChanged = hasMeaningfulDiff(diff);
+
+  if (scopeChanged && !existingScope) {
+    const refreshed = await listMvpItems(project.id); // post-completion state
+    const oldProgress = computeMvpProgress(refreshed).pct;
+    const newProgress = computeMvpProgress(simulateApply(refreshed, diff)).pct;
+    await insertScopeUpdate({
+      project_id: project.id,
+      file_hash: file.hash,
+      file_mtime: file.mtime,
+      diff_json: JSON.stringify(diff),
+      old_progress: oldProgress,
+      new_progress: newProgress,
+    });
+  } else if (!scopeChanged) {
+    // Only completion changed (or nothing) — safe to mark this content seen so
+    // we don't re-scan it forever. Scope changes intentionally leave the hash
+    // un-advanced until approved, so they stay visible.
     await setMvpFileSeen(project.id, file.hash, file.mtime);
-    return { status: "unchanged" };
   }
 
-  const oldProgress = computeMvpProgress(current).pct;
-  const newProgress = computeMvpProgress(simulateApply(current, diff)).pct;
-
-  await insertScopeUpdate({
-    project_id: project.id,
-    file_hash: file.hash,
-    file_mtime: file.mtime,
-    diff_json: JSON.stringify(diff),
-    old_progress: oldProgress,
-    new_progress: newProgress,
-  });
-  return { status: "proposed" };
+  return {
+    status: scopeChanged ? "proposed" : "unchanged",
+    shipResults,
+    scopeProposed: scopeChanged,
+  };
 }
 
 // Applies an approved (possibly edited-down) scope update: adds the selected

@@ -7,11 +7,14 @@ import type {
   FolderSnapshotEntry,
   MvpItem,
   MvpItemStatus,
+  MvpPriority,
   Project,
   ProjectInput,
   ProposedItemUpdate,
   ProposedScopeUpdate,
   ProposedUpdate,
+  ShipEvent,
+  UnlockedAchievement,
   Update,
   UpdateKind,
 } from "../types";
@@ -559,4 +562,94 @@ export async function replaceFolderSnapshot(
       [projectId, f.file_path, f.category, f.hash, f.mtime, f.size]
     );
   }
+}
+
+// --- Ship events + XP -------------------------------------------------------
+
+export async function listShipEvents(): Promise<ShipEvent[]> {
+  const db = await conn();
+  return db.select<ShipEvent[]>(`SELECT * FROM ship_events ORDER BY id DESC`);
+}
+
+export async function listShipEventsForProject(projectId: number): Promise<ShipEvent[]> {
+  const db = await conn();
+  return db.select<ShipEvent[]>(
+    `SELECT * FROM ship_events WHERE project_id = $1 ORDER BY id DESC`,
+    [projectId]
+  );
+}
+
+// Has this specific item already been shipped? Guards against double XP.
+export async function hasShipEventForItem(itemId: number): Promise<boolean> {
+  const db = await conn();
+  const rows = await db.select<{ n: number }[]>(
+    `SELECT COUNT(*) as n FROM ship_events WHERE mvp_item_id = $1`,
+    [itemId]
+  );
+  return (rows[0]?.n ?? 0) > 0;
+}
+
+export async function insertShipEvent(e: {
+  project_id: number;
+  mvp_item_id: number | null;
+  title: string;
+  priority: MvpPriority;
+  xp: number;
+}): Promise<void> {
+  const db = await conn();
+  await db.execute(
+    `INSERT INTO ship_events (project_id, mvp_item_id, title, priority, xp)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [e.project_id, e.mvp_item_id, e.title, e.priority, e.xp]
+  );
+}
+
+export async function totalXp(): Promise<number> {
+  const db = await conn();
+  const rows = await db.select<{ n: number }[]>(
+    `SELECT COALESCE(SUM(xp), 0) as n FROM ship_events`
+  );
+  return rows[0]?.n ?? 0;
+}
+
+export async function projectXp(projectId: number): Promise<number> {
+  const db = await conn();
+  const rows = await db.select<{ n: number }[]>(
+    `SELECT COALESCE(SUM(xp), 0) as n FROM ship_events WHERE project_id = $1`,
+    [projectId]
+  );
+  return rows[0]?.n ?? 0;
+}
+
+// Creates a standalone "win" item (bug fix / small shipped thing) already marked
+// done, so it flows through the normal ship path. Returns the new item id.
+export async function createShippedWinItem(
+  projectId: number,
+  title: string,
+  priority: MvpPriority
+): Promise<number> {
+  const db = await conn();
+  const res = await db.execute(
+    `INSERT INTO mvp_items (project_id, title, description, priority, status, source, evidence)
+     VALUES ($1, $2, '', $3, 'done', 'manual', 'Logged as a shipped win')`,
+    [projectId, title, priority]
+  );
+  return res.lastInsertId as number;
+}
+
+// --- Achievements -----------------------------------------------------------
+
+export async function listUnlockedAchievements(): Promise<UnlockedAchievement[]> {
+  const db = await conn();
+  return db.select<UnlockedAchievement[]>(`SELECT * FROM achievements_unlocked`);
+}
+
+// Insert if not already unlocked. Returns true if it was newly unlocked.
+export async function unlockAchievement(key: string, projectId: number): Promise<boolean> {
+  const db = await conn();
+  const res = await db.execute(
+    `INSERT OR IGNORE INTO achievements_unlocked (key, project_id) VALUES ($1, $2)`,
+    [key, projectId]
+  );
+  return (res.rowsAffected ?? 0) > 0;
 }
