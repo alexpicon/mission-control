@@ -10,7 +10,20 @@ import { completeJson, MissingApiKeyError } from "./provider";
 import { nextMoveSystem } from "./prompts";
 import { daysSince } from "../lib/time";
 
-const MAX_TREE_FILES = 220;
+const MAX_TREE_FILES = 160;
+
+// Cache deep reads for the lifetime of the app session. Re-opening a project,
+// or clicking the button again without having changed anything, reuses the
+// previous answer instead of paying for another call. The key includes the
+// checklist state, so the cache invalidates as soon as real work happens.
+const cache = new Map<string, NextMove>();
+
+function cacheKey(snapshot: ProjectSnapshot): string {
+  const items = snapshot.items
+    .map((i) => `${i.id}:${i.status}:${i.priority}`)
+    .join(",");
+  return `${snapshot.project.id}|${snapshot.project.path}|${items}`;
+}
 
 // A compact view of the codebase: directories with their file counts, plus a
 // capped list of real paths. Paths and categories only — never file contents,
@@ -103,10 +116,17 @@ interface RawMove {
 // doesn't exist — callers fall back to the deterministic pick rather than
 // showing anything invented.
 export async function aiNextMoveForProject(
-  snapshot: ProjectSnapshot
+  snapshot: ProjectSnapshot,
+  opts: { force?: boolean } = {}
 ): Promise<NextMove | null> {
   const open = snapshot.items.filter((i) => i.status !== "done" && i.status !== "cut");
   if (open.length === 0) return null;
+
+  const key = cacheKey(snapshot);
+  if (!opts.force) {
+    const hit = cache.get(key);
+    if (hit) return hit;
+  }
 
   try {
     const fileTree = await buildFileTree(snapshot.project.path);
@@ -124,7 +144,7 @@ export async function aiNextMoveForProject(
     const item = open.find((i) => norm(i.title) === norm(title));
     if (!item) return null;
 
-    return {
+    const move: NextMove = {
       projectId: snapshot.project.id,
       projectName: snapshot.project.name,
       itemId: item.id,
@@ -134,6 +154,8 @@ export async function aiNextMoveForProject(
       firstStep: typeof raw.firstStep === "string" ? raw.firstStep : undefined,
       source: "ai",
     };
+    cache.set(key, move);
+    return move;
   } catch (e) {
     if (e instanceof MissingApiKeyError) return null;
     return null;

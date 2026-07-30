@@ -27,7 +27,8 @@ export function Widget() {
   const [rows, setRows] = useState<Row[]>([]);
   const [level, setLevel] = useState<LevelInfo>(levelInfo(0));
   const [movesByProject, setMovesByProject] = useState<Record<number, NextMove>>({});
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Multiple projects can be expanded at once.
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -76,6 +77,15 @@ export function Widget() {
 
   function hide() {
     getCurrentWindow().hide();
+  }
+
+  function toggleExpanded(id: number) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   return (
@@ -128,12 +138,12 @@ export function Widget() {
         ) : (
           <ul className="space-y-0.5">
             {rows.map(({ project, pct, stale, blocked }) => {
-              const open = expandedId === project.id;
+              const open = expandedIds.has(project.id);
               const projectMove = movesByProject[project.id];
               return (
                 <li key={project.id}>
                   <button
-                    onClick={() => setExpandedId(open ? null : project.id)}
+                    onClick={() => toggleExpanded(project.id)}
                     aria-expanded={open}
                     className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50"
                   >

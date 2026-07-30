@@ -146,7 +146,12 @@ export function MvpSection({
         setAiNote("Add an Anthropic API key in Settings to use this.");
         return;
       }
-      const result = await aiNextMoveForProject({ project, items });
+      // "Re-read" forces a fresh call; the first click reuses a cached answer
+      // if nothing in the checklist has changed since.
+      const result = await aiNextMoveForProject(
+        { project, items },
+        { force: aiMove !== null }
+      );
       if (result) setAiMove(result);
       else setAiNote("No confident read — keeping the pick above.");
     } catch (e) {
