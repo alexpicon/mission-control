@@ -181,7 +181,16 @@ export function Widget() {
 
                   {open && (
                     <div className="mb-1 ml-4 mr-1.5 rounded-md bg-emerald-50/70 px-2 py-1.5">
-                      {projectMove ? (
+                      {!projectMove ? (
+                        <p className="text-xs text-zinc-500">
+                          Nothing open — everything here is done.
+                        </p>
+                      ) : projectMove.itemId === move?.itemId ? (
+                        // Don't repeat the banner at the top of the overlay.
+                        <p className="text-xs text-emerald-700">
+                          ↑ This is your top pick.
+                        </p>
+                      ) : (
                         <>
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                             Do this next
@@ -190,10 +199,6 @@ export function Widget() {
                             {projectMove.title}
                           </p>
                         </>
-                      ) : (
-                        <p className="text-xs text-zinc-500">
-                          Nothing open — everything here is done.
-                        </p>
                       )}
                     </div>
                   )}

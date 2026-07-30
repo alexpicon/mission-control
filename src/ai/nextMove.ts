@@ -18,9 +18,20 @@ function buildContext(snapshots: ProjectSnapshot[]): string {
     const mustLeft = open.filter((i) => i.priority === "must_have").length;
     const doneCount = active.length - open.length;
 
+    // Include real file evidence where we have it (from folder scans / Claude
+    // Code sessions) so the model can see what's actually been touched, not
+    // just what the checklist claims.
     const lines = open
       .slice(0, 25)
-      .map((i) => `  - [${i.priority}] [${i.status}] ${i.title}`)
+      .map((i) => {
+        const base = `  - [${i.priority}] [${i.status}] ${i.title}`;
+        const files = i.evidence
+          .split("\n")
+          .filter((l) => l.startsWith("- "))
+          .map((l) => l.slice(2).trim())
+          .slice(0, 4);
+        return files.length ? `${base}\n      recent files: ${files.join(", ")}` : base;
+      })
       .join("\n");
 
     blocks.push(
