@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Project, ProjectInput } from "./types";
 import type { View } from "./nav";
-import { listProjects, createProject, updateProject } from "./db";
+import { listProjects, createProject, updateProject, getSetting, setSetting } from "./db";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectForm } from "./components/ProjectForm";
 import { Dashboard } from "./pages/Dashboard";
@@ -9,7 +10,7 @@ import { ProjectDetail } from "./pages/ProjectDetail";
 import { Chat } from "./pages/Chat";
 import { Audit } from "./pages/Audit";
 import { Settings } from "./pages/Settings";
-import { isWidgetVisible, toggleWidget } from "./lib/widget";
+import { showWidget, hideWidget } from "./lib/widget";
 import { ingestInbox } from "./cc/ingest";
 import { loadMvpProgressMap } from "./mvp/sync";
 import type { MvpProgress } from "./mvp/diff";
@@ -27,7 +28,10 @@ export default function App() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
 
-  const [widgetOn, setWidgetOn] = useState(false);
+  // Leaderboard overlay: persisted on/off. When on, it shows whenever the main
+  // window is NOT focused, and hides when you're in Mission Control.
+  const [leaderboardOn, setLeaderboardOn] = useState(false);
+  const leaderboardOnRef = useRef(false);
   const [mvpProgress, setMvpProgress] = useState<Record<number, MvpProgress>>({});
   const [xpLevel, setXpLevel] = useState<LevelInfo>(levelInfo(0));
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -65,9 +69,40 @@ export default function App() {
     (async () => {
       await reload();
       setLoading(false);
-      setWidgetOn(await isWidgetVisible());
     })();
   }, []);
+
+  // Leaderboard overlay control: load the saved on/off, and auto-show/hide it
+  // based on whether the main window is focused. Uses a ref so the focus
+  // listener always sees the latest on/off without re-subscribing.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const saved = (await getSetting("leaderboard_enabled")) === "1";
+      leaderboardOnRef.current = saved;
+      setLeaderboardOn(saved);
+      // If it's on and we're not already focused, show it now.
+      const win = getCurrentWindow();
+      if (saved && !(await win.isFocused())) await showWidget();
+      unlisten = await win.onFocusChanged(({ payload: focused }) => {
+        if (focused) hideWidget();
+        else if (leaderboardOnRef.current) showWidget();
+      });
+    })();
+    return () => unlisten?.();
+  }, []);
+
+  async function toggleLeaderboard() {
+    const next = !leaderboardOn;
+    setLeaderboardOn(next);
+    leaderboardOnRef.current = next;
+    await setSetting("leaderboard_enabled", next ? "1" : "0");
+    if (!next) {
+      await hideWidget();
+    } else if (!(await getCurrentWindow().isFocused())) {
+      await showWidget();
+    }
+  }
 
   // Ingest Claude Code hook events while the app is open. Events written while
   // it was closed are picked up here too. Reload projects if anything landed
@@ -112,11 +147,6 @@ export default function App() {
     await reload();
   }
 
-  async function handleToggleWidget() {
-    const on = await toggleWidget();
-    setWidgetOn(on);
-  }
-
   const currentProject =
     view.name === "project"
       ? projects.find((p) => p.id === view.id) ?? null
@@ -135,8 +165,8 @@ export default function App() {
         current={view.name}
         navigate={setView}
         onNewProject={openNew}
-        onToggleWidget={handleToggleWidget}
-        widgetOn={widgetOn}
+        onToggleLeaderboard={toggleLeaderboard}
+        leaderboardOn={leaderboardOn}
         level={xpLevel}
         pulseKey={barPulse}
       />

@@ -13,16 +13,16 @@ export function Sidebar({
   current,
   navigate,
   onNewProject,
-  onToggleWidget,
-  widgetOn,
+  onToggleLeaderboard,
+  leaderboardOn,
   level,
   pulseKey,
 }: {
   current: View["name"];
   navigate: Nav;
   onNewProject: () => void;
-  onToggleWidget: () => void;
-  widgetOn: boolean;
+  onToggleLeaderboard: () => void;
+  leaderboardOn: boolean;
   level: LevelInfo;
   pulseKey: number;
 }) {
@@ -67,16 +67,17 @@ export function Sidebar({
       <div className="mt-auto space-y-2 pt-4">
         <LevelBadge level={level} pulseKey={pulseKey} />
         <button
-          onClick={onToggleWidget}
+          onClick={onToggleLeaderboard}
           className="flex w-full items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+          title="Always-on-top overlay. Shows when you leave Mission Control."
         >
-          <span>Floating widget</span>
+          <span>Leaderboard overlay</span>
           <span
             className={`text-xs font-medium ${
-              widgetOn ? "text-emerald-600" : "text-zinc-400"
+              leaderboardOn ? "text-emerald-600" : "text-zinc-400"
             }`}
           >
-            {widgetOn ? "On" : "Off"}
+            {leaderboardOn ? "On" : "Off"}
           </span>
         </button>
       </div>

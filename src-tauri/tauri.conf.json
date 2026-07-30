@@ -21,10 +21,10 @@
       },
       {
         "label": "widget",
-        "title": "Mission Control Widget",
+        "title": "Mission Control Leaderboard",
         "url": "index.html?window=widget",
         "width": 300,
-        "height": 232,
+        "height": 460,
         "resizable": false,
         "decorations": false,
         "alwaysOnTop": true,

@@ -1,4 +1,6 @@
-// Controls the always-on-top widget window (defined in tauri.conf.json, label "widget").
+// Controls the always-on-top leaderboard overlay window (label "widget",
+// defined in tauri.conf.json). It floats above other apps and across all
+// desktops, and does not steal focus when shown.
 
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
@@ -19,23 +21,16 @@ export async function isWidgetVisible(): Promise<boolean> {
 export async function showWidget(): Promise<void> {
   const w = await widget();
   if (!w) return;
-  await w.show();
-  await w.setFocus();
+  try {
+    await w.setVisibleOnAllWorkspaces(true); // show on every macOS Space
+  } catch {
+    // permission/platform may not support it — still show the window
+  }
+  await w.show(); // no setFocus: it appears without stealing focus from your active app
 }
 
 export async function hideWidget(): Promise<void> {
   const w = await widget();
   if (!w) return;
   await w.hide();
-}
-
-// Returns the new visibility state.
-export async function toggleWidget(): Promise<boolean> {
-  const visible = await isWidgetVisible();
-  if (visible) {
-    await hideWidget();
-    return false;
-  }
-  await showWidget();
-  return true;
 }
