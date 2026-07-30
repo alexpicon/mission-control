@@ -81,7 +81,7 @@ export async function checkMvpFile(project: Project): Promise<CheckMvpResult> {
 
   let file: { content: string; hash: string; mtime: string };
   try {
-    file = await invoke("read_mvp_file", { path: project.mvp_file_path });
+    file = await invoke("read_mvp_file", { path: absoluteMvpPath(project) });
   } catch (e) {
     return { ...base, status: "not_found", message: e instanceof Error ? e.message : String(e) };
   }
@@ -250,6 +250,15 @@ export async function scanFolder(project: Project): Promise<FolderScanResult> {
   }
 
   return { changedCount: changedFiles.length, changedFiles };
+}
+
+// Resolve the MVP file to an absolute path for reading. A relative path (e.g.
+// "docs/MVP.md") is joined to the project folder; an absolute path is used as-is.
+function absoluteMvpPath(project: Project): string {
+  const p = project.mvp_file_path.trim();
+  if (p.startsWith("/")) return p;
+  const base = project.path.replace(/\/+$/, "");
+  return base ? `${base}/${p}` : p;
 }
 
 function relativeMvpPath(project: Project): string | null {
