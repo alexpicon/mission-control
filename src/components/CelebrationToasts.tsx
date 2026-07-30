@@ -1,28 +1,50 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ShipResult } from "../types";
 import { ACHIEVEMENTS_BY_KEY } from "../xp/achievements";
 
-// A queued ship celebration. Deliberately calm — a clean card, no confetti —
-// so it reads as founder-tool satisfying, not childish.
+// A queued ship celebration — pops in, counts the XP up, and (with the
+// confetti fired from App) makes shipping feel like an event.
 export interface Toast extends ShipResult {
   toastId: number;
 }
 
-function ToastCard({ toast, onDone }: { toast: Toast; onDone: (id: number) => void }) {
+// Counts from 0 up to `target` over ~600ms. Pure UI sugar.
+function useCountUp(target: number): number {
+  const [n, setN] = useState(0);
   useEffect(() => {
-    const t = setTimeout(() => onDone(toast.toastId), 4500);
+    if (target <= 0) return;
+    const steps = Math.min(target, 20);
+    const stepMs = 600 / steps;
+    let current = 0;
+    const id = setInterval(() => {
+      current += 1;
+      setN(Math.round((current / steps) * target));
+      if (current >= steps) {
+        setN(target);
+        clearInterval(id);
+      }
+    }, stepMs);
+    return () => clearInterval(id);
+  }, [target]);
+  return n;
+}
+
+function ToastCard({ toast, onDone }: { toast: Toast; onDone: (id: number) => void }) {
+  const xp = useCountUp(toast.xpAwarded);
+  useEffect(() => {
+    const t = setTimeout(() => onDone(toast.toastId), 5000);
     return () => clearTimeout(t);
   }, [toast.toastId, onDone]);
 
   return (
-    <div className="pointer-events-auto w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-lg">
+    <div className="mc-pop pointer-events-auto w-72 rounded-xl border border-emerald-200 bg-white p-3 shadow-lg ring-1 ring-emerald-100">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-          Shipped
+          🚀 Shipped
         </span>
         {toast.xpAwarded > 0 && (
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-            +{toast.xpAwarded} XP
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-bold tabular-nums text-emerald-700">
+            +{xp} XP
           </span>
         )}
       </div>
@@ -30,15 +52,13 @@ function ToastCard({ toast, onDone }: { toast: Toast; onDone: (id: number) => vo
         {toast.title}
       </p>
       {toast.leveledUp && (
-        <p className="mt-1 text-sm font-semibold text-zinc-900">
-          ⬆ Level {toast.levelAfter}
-        </p>
+        <p className="mt-1 text-sm font-bold text-emerald-700">⬆ Level {toast.levelAfter}!</p>
       )}
       {toast.newAchievements.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
           {toast.newAchievements.map((k) => (
-            <p key={k} className="text-xs font-medium text-violet-700">
-              🏆 {ACHIEVEMENTS_BY_KEY[k]?.title ?? k}
+            <p key={k} className="text-xs font-semibold text-violet-700">
+              🏆 {ACHIEVEMENTS_BY_KEY[k]?.title ?? k} unlocked
             </p>
           ))}
         </div>

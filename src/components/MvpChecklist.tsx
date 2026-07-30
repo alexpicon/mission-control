@@ -82,9 +82,9 @@ function Row({
           <button
             onClick={ship}
             disabled={busy}
-            className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+            className="rounded-md bg-gradient-to-br from-emerald-500 to-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 active:scale-95 disabled:opacity-40"
           >
-            Ship it
+            Ship it 🚀
           </button>
         )}
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[item.status]}`}>
@@ -127,14 +127,21 @@ export function MvpChecklist({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
+      <div className="rounded-2xl border border-zinc-200 bg-gradient-to-br from-white to-emerald-50/40 p-4">
         <div className="flex items-baseline justify-between">
           <h3 className="text-sm font-semibold text-zinc-900">
-            MVP Progress: {progress.pct}%
+            MVP Progress: <span className="tabular-nums">{progress.pct}%</span>
           </h3>
           <span className="text-xs text-zinc-400">
             {progress.doneMust} / {progress.totalMust} must-haves
           </span>
+        </div>
+
+        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-zinc-100">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-[width] duration-700 ease-out"
+            style={{ width: `${progress.pct}%` }}
+          />
         </div>
 
         <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-xs text-zinc-500 sm:grid-cols-2">

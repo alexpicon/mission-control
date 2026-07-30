@@ -22,7 +22,7 @@ export function ProjectCard({
   return (
     <button
       onClick={() => onOpen(project.id)}
-      className="flex w-full flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-zinc-300 hover:shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+      className="flex w-full flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -40,7 +40,7 @@ export function ProjectCard({
         <div className="flex items-center gap-2">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
             <div
-              className="h-full rounded-full bg-emerald-600 transition-all"
+              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
               style={{ width: `${mvpProgress.pct}%` }}
             />
           </div>

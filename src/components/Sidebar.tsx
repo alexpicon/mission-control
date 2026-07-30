@@ -16,6 +16,7 @@ export function Sidebar({
   onToggleWidget,
   widgetOn,
   level,
+  pulseKey,
 }: {
   current: View["name"];
   navigate: Nav;
@@ -23,17 +24,23 @@ export function Sidebar({
   onToggleWidget: () => void;
   widgetOn: boolean;
   level: LevelInfo;
+  pulseKey: number;
 }) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-200 bg-white px-3 py-4">
-      <div className="px-2 pb-4">
-        <div className="text-sm font-semibold text-zinc-900">Mission Control</div>
-        <div className="text-xs text-zinc-400">Local project command center</div>
+    <aside className="relative z-30 flex w-56 shrink-0 flex-col overflow-visible border-r border-zinc-200 bg-white/70 px-3 py-4 backdrop-blur">
+      <div className="flex items-center gap-2 px-1 pb-4">
+        <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-base shadow-sm">
+          🚀
+        </span>
+        <div>
+          <div className="text-sm font-semibold text-zinc-900">Mission Control</div>
+          <div className="text-[11px] text-zinc-400">Ship more. Guess less.</div>
+        </div>
       </div>
 
       <button
         onClick={onNewProject}
-        className="mb-3 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+        className="mb-3 rounded-lg bg-gradient-to-br from-zinc-900 to-zinc-700 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
       >
         + New project
       </button>
@@ -58,7 +65,7 @@ export function Sidebar({
       </nav>
 
       <div className="mt-auto space-y-2 pt-4">
-        <LevelBadge level={level} />
+        <LevelBadge level={level} pulseKey={pulseKey} />
         <button
           onClick={onToggleWidget}
           className="flex w-full items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"

@@ -31,6 +31,7 @@ export default function App() {
   const [mvpProgress, setMvpProgress] = useState<Record<number, MvpProgress>>({});
   const [xpLevel, setXpLevel] = useState<LevelInfo>(levelInfo(0));
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [barPulse, setBarPulse] = useState(0); // bump to replay the bar glow
 
   async function reload() {
     const p = await listProjects();
@@ -44,11 +45,14 @@ export default function App() {
   // refreshes level/progress. Uses the XP delta as a stable toast id so we
   // never call Date.now()/Math.random() during render.
   function handleShipped(r: ShipResult) {
-    if (r.shipped || r.leveledUp || r.newAchievements.length > 0) {
+    const noteworthy = r.shipped || r.leveledUp || r.newAchievements.length > 0;
+    if (noteworthy) {
       setToasts((prev) => [
         ...prev,
         { ...r, toastId: (prev[prev.length - 1]?.toastId ?? 0) + 1 },
       ]);
+      // The level bar handles its own local shatter effect (see LevelBadge).
+      setBarPulse((p) => p + 1);
     }
     reload();
   }
@@ -126,7 +130,7 @@ export default function App() {
   }, [view, currentProject, loading]);
 
   return (
-    <div className="flex h-screen bg-[#f6f6f7]">
+    <div className="flex h-screen">
       <Sidebar
         current={view.name}
         navigate={setView}
@@ -134,6 +138,7 @@ export default function App() {
         onToggleWidget={handleToggleWidget}
         widgetOn={widgetOn}
         level={xpLevel}
+        pulseKey={barPulse}
       />
 
       <main className="flex-1 overflow-y-auto p-6">
