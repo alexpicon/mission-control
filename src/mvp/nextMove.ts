@@ -63,46 +63,81 @@ function reasonFor(
   return parts.join(" ");
 }
 
+// The best task WITHIN one project, plus its score so the portfolio-wide pick
+// can compare across projects.
+function bestInProject(
+  snapshot: ProjectSnapshot
+): { move: NextMove; score: number } | null {
+  const { project, items } = snapshot;
+  if (project.status === "Done") return null;
+
+  const active = items.filter((i) => i.status !== "cut");
+  const remainingMust = active.filter(
+    (i) => i.priority === "must_have" && i.status !== "done"
+  ).length;
+  const stale = isStale(project);
+
+  let best: NextMove | null = null;
+  let bestScore = -Infinity;
+
+  for (const item of active) {
+    if (item.status === "done") continue;
+
+    let score = PRIORITY_SCORE[item.priority];
+    if (item.status === "in_progress") score += 50; // finish what you started
+    if (item.status === "blocked") score -= 60; // can't move it right now
+    // Finish-line bias: the closer a project is to shipping, the more its
+    // remaining must-haves are worth.
+    if (item.priority === "must_have" && remainingMust > 0) {
+      score += Math.round(60 / remainingMust);
+    }
+    if (stale) score += 10; // nudge quiet projects back to life
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        projectId: project.id,
+        projectName: project.name,
+        itemId: item.id,
+        title: item.title,
+        priority: item.priority,
+        reason: reasonFor(project, item, remainingMust, stale),
+        source: "auto",
+      };
+    }
+  }
+
+  return best ? { move: best, score: bestScore } : null;
+}
+
+// The next task for ONE project — used on the project page and when you tap a
+// project in the overlay.
+export function pickNextMoveForProject(snapshot: ProjectSnapshot): NextMove | null {
+  return bestInProject(snapshot)?.move ?? null;
+}
+
+// The next task for every project, keyed by project id.
+export function pickNextMoveByProject(
+  snapshots: ProjectSnapshot[]
+): Record<number, NextMove> {
+  const map: Record<number, NextMove> = {};
+  for (const snapshot of snapshots) {
+    const result = bestInProject(snapshot);
+    if (result) map[snapshot.project.id] = result.move;
+  }
+  return map;
+}
+
 // Returns the best task overall, or null if there's nothing actionable.
 export function pickNextMove(snapshots: ProjectSnapshot[]): NextMove | null {
   let best: NextMove | null = null;
   let bestScore = -Infinity;
-
-  for (const { project, items } of snapshots) {
-    if (project.status === "Done") continue;
-    const active = items.filter((i) => i.status !== "cut");
-    const remainingMust = active.filter(
-      (i) => i.priority === "must_have" && i.status !== "done"
-    ).length;
-    const stale = isStale(project);
-
-    for (const item of active) {
-      if (item.status === "done") continue;
-
-      let score = PRIORITY_SCORE[item.priority];
-      if (item.status === "in_progress") score += 50; // finish what you started
-      if (item.status === "blocked") score -= 60; // can't move it right now
-      // Finish-line bias: the closer a project is to shipping, the more its
-      // remaining must-haves are worth.
-      if (item.priority === "must_have" && remainingMust > 0) {
-        score += Math.round(60 / remainingMust);
-      }
-      if (stale) score += 10; // nudge quiet projects back to life
-
-      if (score > bestScore) {
-        bestScore = score;
-        best = {
-          projectId: project.id,
-          projectName: project.name,
-          itemId: item.id,
-          title: item.title,
-          priority: item.priority,
-          reason: reasonFor(project, item, remainingMust, stale),
-          source: "auto",
-        };
-      }
+  for (const snapshot of snapshots) {
+    const result = bestInProject(snapshot);
+    if (result && result.score > bestScore) {
+      bestScore = result.score;
+      best = result.move;
     }
   }
-
   return best;
 }

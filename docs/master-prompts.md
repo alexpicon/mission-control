@@ -88,19 +88,30 @@ The rule that matters: **published = done. A written draft is NOT done.** That's
 makes finished-but-unpublished work visible instead of invisible.
 
 ```
-Create (or update) a checklist file at docs/mvp-checklist.md for my LinkedIn presence,
-so my project tracker can read it.
-Rules:
+Create a checklist at docs/mvp-checklist.md that plans my LinkedIn posts for the next
+month, so my project tracker can read it and the bar fills up as I publish.
+
+Base the topics on what I'm actually building right now — ask me what I'm working on if
+you don't already know. Plan roughly 12 posts for the month, mixing:
+- something I shipped or built (the strongest posts)
+- something I learned, or got wrong and fixed
+- a behind-the-scenes / how-I-work post
+- an opinion or take on my field
+
+Format rules:
 - Three headings: ## Must have, ## Should have, ## Nice to have
 - Each line is ONE post: "- [ ] short post topic" (not published) or "- [x] short post topic" (published, live on LinkedIn)
 - ONLY [x] a post that is actually PUBLISHED. A written draft is NOT done.
-- ## Must have = posts I've committed to publishing (the current queue)
-- ## Should have = strong ideas worth writing next
+- ## Must have = the posts I'm committing to publish this month (~8)
+- ## Should have = extra ideas if I have momentum (~4)
 - ## Nice to have = someday/maybe ideas
-- Keep titles short — the topic, not the post text. Keep drafts in their own separate files.
+- Keep each title short — the topic, not the post text
+- Keep the actual drafts in their own files (e.g. drafts/topic.md); this file is ONLY the checklist
 - Do NOT delete or reword existing items; when I publish one, just check it off
 - Nothing else in the file but the three sections and checkbox lines
 ```
 
-Re-run it whenever you want to queue more posts (it checks off what you published and
-adds new ideas), then **Scan MVP file → Approve** in Mission Control.
+Then in Mission Control: add the LinkedIn folder as a project → **Scan MVP file → Approve**.
+Each published post checks off and earns XP. Re-run the prompt at the start of each month
+(or when the queue runs low) to plan the next batch — same **Scan → Approve** loop as code
+projects.

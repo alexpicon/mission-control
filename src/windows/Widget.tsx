@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Project } from "../types";
 import { computeMvpProgress, type MvpProgress } from "../mvp/diff";
-import { loadSnapshots, pickNextMove, type NextMove } from "../mvp/nextMove";
+import {
+  loadSnapshots,
+  pickNextMove,
+  pickNextMoveByProject,
+  type NextMove,
+} from "../mvp/nextMove";
 import { listProjects } from "../db";
 import { loadXpSummary } from "../xp/summary";
 import { isStale } from "../lib/time";
@@ -23,6 +28,8 @@ export function Widget() {
   const [rows, setRows] = useState<Row[]>([]);
   const [level, setLevel] = useState<LevelInfo>(levelInfo(0));
   const [move, setMove] = useState<NextMove | null>(null);
+  const [movesByProject, setMovesByProject] = useState<Record<number, NextMove>>({});
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -39,6 +46,7 @@ export function Widget() {
         }
       }
       setMove(pickNextMove(snaps));
+      setMovesByProject(pickNextMoveByProject(snaps));
 
       const built: Row[] = projects.map((p) => {
         const prog: MvpProgress | undefined = mvp[p.id];
@@ -135,31 +143,63 @@ export function Widget() {
           <p className="px-1.5 py-2 text-xs text-zinc-400">No projects yet.</p>
         ) : (
           <ul className="space-y-0.5">
-            {rows.map(({ project, pct, stale, blocked }) => (
-              <li
-                key={project.id}
-                className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-zinc-50"
-              >
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    blocked ? "bg-amber-500" : stale ? "bg-orange-400" : pct >= 100 ? "bg-emerald-500" : "bg-zinc-300"
-                  }`}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate text-xs text-zinc-800">
-                  {project.name}
-                </span>
-                <span className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-500">
-                  {pct}%
-                </span>
-                <span className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-zinc-100">
-                  <span
-                    className="block h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
-                    style={{ width: `${pct}%` }}
-                  />
-                </span>
-              </li>
-            ))}
+            {rows.map(({ project, pct, stale, blocked }) => {
+              const open = expandedId === project.id;
+              const projectMove = movesByProject[project.id];
+              return (
+                <li key={project.id}>
+                  <button
+                    onClick={() => setExpandedId(open ? null : project.id)}
+                    aria-expanded={open}
+                    className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50"
+                  >
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        blocked
+                          ? "bg-amber-500"
+                          : stale
+                            ? "bg-orange-400"
+                            : pct >= 100
+                              ? "bg-emerald-500"
+                              : "bg-zinc-300"
+                      }`}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs text-zinc-800">
+                      {project.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-500">
+                      {pct}%
+                    </span>
+                    <span className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-zinc-100">
+                      <span
+                        className="block h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div className="mb-1 ml-4 mr-1.5 rounded-md bg-emerald-50/70 px-2 py-1.5">
+                      {projectMove ? (
+                        <>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                            Do this next
+                          </p>
+                          <p className="text-xs leading-snug text-zinc-900">
+                            {projectMove.title}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-zinc-500">
+                          Nothing open — everything here is done.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

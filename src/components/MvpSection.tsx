@@ -17,6 +17,7 @@ import {
   listUnlockedAchievements,
 } from "../db";
 import { checkMvpFile, scanFolder } from "../mvp/sync";
+import { pickNextMoveForProject } from "../mvp/nextMove";
 import { logShippedWin } from "../xp/ship";
 import { computeMvpProgress } from "../mvp/diff";
 import { relativeTime } from "../lib/time";
@@ -127,9 +128,21 @@ export function MvpSection({
 
   const progress = computeMvpProgress(items);
   const itemsById = new Map(items.map((i) => [i.id, i]));
+  const nextMove = pickNextMoveForProject({ project, items });
 
   return (
     <div className="space-y-4">
+      {nextMove && (
+        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50/50 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            Do this next
+          </p>
+          <p className="mt-0.5 text-base font-semibold leading-snug text-zinc-900">
+            {nextMove.title}
+          </p>
+          <p className="mt-1 text-sm text-zinc-600">{nextMove.reason}</p>
+        </div>
+      )}
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
