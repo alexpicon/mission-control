@@ -166,6 +166,24 @@ export async function applyScopeUpdate(
     });
   }
 
+  // Items that were already checked [x] in the file import as DONE — and each
+  // one credits XP once (via shipMvpItem's guard), so linking a project you've
+  // already built reflects that work in your level. Done silently (no toast
+  // spam); the level bar animates up on the next reload.
+  const importedDone = new Set(
+    diff.added
+      .filter((a) => a.done && selection.addTitles.has(a.title))
+      .map((a) => a.title.trim().toLowerCase())
+  );
+  if (importedDone.size > 0) {
+    const justAdded = await listMvpItems(project.id);
+    for (const item of justAdded) {
+      if (item.status !== "done" && importedDone.has(item.title.trim().toLowerCase())) {
+        await shipMvpItem(item, project);
+      }
+    }
+  }
+
   for (const removed of diff.removed) {
     if (!selection.removeTitles.has(removed.title)) continue;
     await cutMvpItemByTitle(project.id, removed.title);
