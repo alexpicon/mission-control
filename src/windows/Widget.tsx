@@ -4,7 +4,6 @@ import type { Project } from "../types";
 import { computeMvpProgress, type MvpProgress } from "../mvp/diff";
 import {
   loadSnapshots,
-  pickNextMove,
   pickNextMoveByProject,
   type NextMove,
 } from "../mvp/nextMove";
@@ -27,7 +26,6 @@ interface Row {
 export function Widget() {
   const [rows, setRows] = useState<Row[]>([]);
   const [level, setLevel] = useState<LevelInfo>(levelInfo(0));
-  const [move, setMove] = useState<NextMove | null>(null);
   const [movesByProject, setMovesByProject] = useState<Record<number, NextMove>>({});
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -45,7 +43,6 @@ export function Widget() {
           mvp[s.project.id] = computeMvpProgress(s.items);
         }
       }
-      setMove(pickNextMove(snaps));
       setMovesByProject(pickNextMoveByProject(snaps));
 
       const built: Row[] = projects.map((p) => {
@@ -122,20 +119,7 @@ export function Widget() {
         </div>
       </div>
 
-      {/* Next best move — the one thing to do right now */}
-      {move && (
-        <div className="border-b border-zinc-100 bg-emerald-50/50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-            Do this next
-          </p>
-          <p className="mt-0.5 text-xs font-semibold leading-snug text-zinc-900">
-            {move.title}
-          </p>
-          <p className="truncate text-[11px] text-zinc-500">{move.projectName}</p>
-        </div>
-      )}
-
-      {/* Ranked projects */}
+      {/* Ranked projects — tap one to see that project's next task */}
       <div className="flex-1 overflow-y-auto px-1.5 py-1.5">
         {!loaded ? (
           <p className="px-1.5 py-2 text-xs text-zinc-400">Loading…</p>
@@ -184,11 +168,6 @@ export function Widget() {
                       {!projectMove ? (
                         <p className="text-xs text-zinc-500">
                           Nothing open — everything here is done.
-                        </p>
-                      ) : projectMove.itemId === move?.itemId ? (
-                        // Don't repeat the banner at the top of the overlay.
-                        <p className="text-xs text-emerald-700">
-                          ↑ This is your top pick.
                         </p>
                       ) : (
                         <>

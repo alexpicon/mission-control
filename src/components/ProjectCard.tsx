@@ -1,5 +1,6 @@
 import type { Project } from "../types";
 import type { MvpProgress } from "../mvp/diff";
+import type { NextMove } from "../mvp/nextMove";
 import { StatusBadge } from "./StatusBadge";
 import { ProgressBar } from "./ProgressBar";
 import { StaleTag } from "./StaleTag";
@@ -8,16 +9,17 @@ import { relativeTime } from "../lib/time";
 export function ProjectCard({
   project,
   mvpProgress,
+  nextMove,
   onOpen,
 }: {
   project: Project;
   mvpProgress?: MvpProgress;
+  nextMove?: NextMove;
   onOpen: (id: number) => void;
 }) {
   const evidence = project.progress_mode === "evidence" && mvpProgress;
-  const nextBestMove = evidence
-    ? mvpProgress.missingMust[0]?.title ?? project.next_step
-    : project.next_step;
+  // The scored next task for THIS project, falling back to the manual next step.
+  const nextBestMove = nextMove?.title ?? project.next_step;
 
   return (
     <button
@@ -74,7 +76,7 @@ export function ProjectCard({
             </div>
             <div className="flex gap-2">
               <dt className="w-16 shrink-0 text-zinc-400">Next</dt>
-              <dd className="text-zinc-700">{project.next_step || "—"}</dd>
+              <dd className="text-zinc-700">{nextBestMove || "—"}</dd>
             </div>
           </>
         )}

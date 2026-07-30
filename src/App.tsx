@@ -15,9 +15,8 @@ import { ingestInbox } from "./cc/ingest";
 import { computeMvpProgress, type MvpProgress } from "./mvp/diff";
 import {
   loadSnapshots,
-  pickNextMove,
+  pickNextMoveByProject,
   type NextMove,
-  type ProjectSnapshot,
 } from "./mvp/nextMove";
 import type { ShipResult } from "./types";
 import { loadXpSummary } from "./xp/summary";
@@ -38,8 +37,7 @@ export default function App() {
   const [leaderboardOn, setLeaderboardOn] = useState(false);
   const leaderboardOnRef = useRef(false);
   const [mvpProgress, setMvpProgress] = useState<Record<number, MvpProgress>>({});
-  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
-  const [nextMove, setNextMove] = useState<NextMove | null>(null);
+  const [movesByProject, setMovesByProject] = useState<Record<number, NextMove>>({});
   const [xpLevel, setXpLevel] = useState<LevelInfo>(levelInfo(0));
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [barPulse, setBarPulse] = useState(0); // bump to replay the bar glow
@@ -51,8 +49,7 @@ export default function App() {
     // One pass over the items feeds progress, the next-best-move pick, and the
     // AI's context — instead of querying each project's items several times.
     const snaps = await loadSnapshots(p);
-    setSnapshots(snaps);
-    setNextMove(pickNextMove(snaps));
+    setMovesByProject(pickNextMoveByProject(snaps));
 
     const mvp: Record<number, MvpProgress> = {};
     for (const s of snaps) {
@@ -197,8 +194,7 @@ export default function App() {
           <Dashboard
             projects={projects}
             mvpProgress={mvpProgress}
-            nextMove={nextMove}
-            snapshots={snapshots}
+            movesByProject={movesByProject}
             onOpen={(id) => setView({ name: "project", id })}
             onNewProject={openNew}
           />

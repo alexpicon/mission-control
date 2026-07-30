@@ -17,7 +17,9 @@ import {
   listUnlockedAchievements,
 } from "../db";
 import { checkMvpFile, scanFolder } from "../mvp/sync";
-import { pickNextMoveForProject } from "../mvp/nextMove";
+import { pickNextMoveForProject, type NextMove } from "../mvp/nextMove";
+import { aiNextMoveForProject } from "../ai/nextMove";
+import { hasApiKey } from "../ai/provider";
 import { logShippedWin } from "../xp/ship";
 import { computeMvpProgress } from "../mvp/diff";
 import { relativeTime } from "../lib/time";
@@ -47,6 +49,9 @@ export function MvpSection({
   const [winTitle, setWinTitle] = useState("");
   const [winPriority, setWinPriority] = useState<MvpPriority>("should_have");
   const [winBusy, setWinBusy] = useState(false);
+  const [aiMove, setAiMove] = useState<NextMove | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
 
   async function load() {
     const [i, s, u, se, ach] = await Promise.all([
@@ -128,19 +133,70 @@ export function MvpSection({
 
   const progress = computeMvpProgress(items);
   const itemsById = new Map(items.map((i) => [i.id, i]));
-  const nextMove = pickNextMoveForProject({ project, items });
+  const autoMove = pickNextMoveForProject({ project, items });
+  const nextMove = aiMove ?? autoMove;
+
+  // Deep read: sends this project's checklist AND its real file tree to the
+  // model, so the pick reflects the actual state of the codebase.
+  async function deepRead() {
+    setAiBusy(true);
+    setAiNote(null);
+    try {
+      if (!(await hasApiKey())) {
+        setAiNote("Add an Anthropic API key in Settings to use this.");
+        return;
+      }
+      const result = await aiNextMoveForProject({ project, items });
+      if (result) setAiMove(result);
+      else setAiNote("No confident read — keeping the pick above.");
+    } catch (e) {
+      setAiNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
       {nextMove && (
         <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50/50 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-            Do this next
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              Do this next
+            </p>
+            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200">
+              {nextMove.source === "ai" ? "AI read the code" : "auto"}
+            </span>
+          </div>
           <p className="mt-0.5 text-base font-semibold leading-snug text-zinc-900">
             {nextMove.title}
           </p>
           <p className="mt-1 text-sm text-zinc-600">{nextMove.reason}</p>
+
+          {nextMove.firstStep && (
+            <div className="mt-2 rounded-lg bg-white/70 p-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                Start with
+              </p>
+              <p className="text-sm text-zinc-800">{nextMove.firstStep}</p>
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={deepRead}
+              disabled={aiBusy || !project.path}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40"
+              title={
+                project.path
+                  ? "Reads this project's files and checklist, then picks the next task"
+                  : "Add a folder path first"
+              }
+            >
+              {aiBusy ? "Reading the project…" : aiMove ? "Re-read project" : "Deep read (AI)"}
+            </button>
+            {aiNote && <span className="text-xs text-zinc-500">{aiNote}</span>}
+          </div>
         </div>
       )}
       <div className="rounded-xl border border-zinc-200 bg-white p-4">

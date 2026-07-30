@@ -1,23 +1,20 @@
 import type { Project } from "../types";
 import type { MvpProgress } from "../mvp/diff";
-import type { NextMove, ProjectSnapshot } from "../mvp/nextMove";
+import type { NextMove } from "../mvp/nextMove";
 import { ProjectCard } from "../components/ProjectCard";
 import { SetupChecklist } from "../components/SetupChecklist";
-import { NextMoveCard } from "../components/NextMoveCard";
 import { isStale } from "../lib/time";
 
 export function Dashboard({
   projects,
   mvpProgress,
-  nextMove,
-  snapshots,
+  movesByProject,
   onOpen,
   onNewProject,
 }: {
   projects: Project[];
   mvpProgress: Record<number, MvpProgress>;
-  nextMove: NextMove | null;
-  snapshots: ProjectSnapshot[];
+  movesByProject: Record<number, NextMove>;
   onOpen: (id: number) => void;
   onNewProject: () => void;
 }) {
@@ -66,8 +63,6 @@ export function Dashboard({
         </div>
       </header>
 
-      <NextMoveCard move={nextMove} snapshots={snapshots} onOpenProject={onOpen} />
-
       <SetupChecklist projects={projects} />
 
       {attention.length > 0 && (
@@ -77,7 +72,13 @@ export function Dashboard({
           </h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {attention.map((p) => (
-              <ProjectCard key={p.id} project={p} mvpProgress={mvpProgress[p.id]} onOpen={onOpen} />
+              <ProjectCard
+                key={p.id}
+                project={p}
+                mvpProgress={mvpProgress[p.id]}
+                nextMove={movesByProject[p.id]}
+                onOpen={onOpen}
+              />
             ))}
           </div>
         </section>
@@ -89,7 +90,13 @@ export function Dashboard({
         </h2>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} mvpProgress={mvpProgress[p.id]} onOpen={onOpen} />
+            <ProjectCard
+                key={p.id}
+                project={p}
+                mvpProgress={mvpProgress[p.id]}
+                nextMove={movesByProject[p.id]}
+                onOpen={onOpen}
+              />
           ))}
         </div>
       </section>
