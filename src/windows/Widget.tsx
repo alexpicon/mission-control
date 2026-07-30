@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Project } from "../types";
-import type { MvpProgress } from "../mvp/diff";
+import { computeMvpProgress, type MvpProgress } from "../mvp/diff";
+import { loadSnapshots, pickNextMove, type NextMove } from "../mvp/nextMove";
 import { listProjects } from "../db";
 import { loadXpSummary } from "../xp/summary";
-import { loadMvpProgressMap } from "../mvp/sync";
 import { isStale } from "../lib/time";
 import type { LevelInfo } from "../xp/model";
 import { levelInfo } from "../xp/model";
@@ -22,17 +22,24 @@ interface Row {
 export function Widget() {
   const [rows, setRows] = useState<Row[]>([]);
   const [level, setLevel] = useState<LevelInfo>(levelInfo(0));
+  const [move, setMove] = useState<NextMove | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
     async function tick() {
-      const [projects, xp, mvp] = await Promise.all([
-        listProjects(),
-        loadXpSummary(),
-        listProjects().then(loadMvpProgressMap),
-      ]);
+      const projects = await listProjects();
+      const [xp, snaps] = await Promise.all([loadXpSummary(), loadSnapshots(projects)]);
       if (!active) return;
+
+      const mvp: Record<number, MvpProgress> = {};
+      for (const s of snaps) {
+        if (s.project.progress_mode === "evidence") {
+          mvp[s.project.id] = computeMvpProgress(s.items);
+        }
+      }
+      setMove(pickNextMove(snaps));
+
       const built: Row[] = projects.map((p) => {
         const prog: MvpProgress | undefined = mvp[p.id];
         const pct = p.progress_mode === "evidence" && prog ? prog.pct : p.progress;
@@ -106,6 +113,19 @@ export function Widget() {
           />
         </div>
       </div>
+
+      {/* Next best move — the one thing to do right now */}
+      {move && (
+        <div className="border-b border-zinc-100 bg-emerald-50/50 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+            Do this next
+          </p>
+          <p className="mt-0.5 text-xs font-semibold leading-snug text-zinc-900">
+            {move.title}
+          </p>
+          <p className="truncate text-[11px] text-zinc-500">{move.projectName}</p>
+        </div>
+      )}
 
       {/* Ranked projects */}
       <div className="flex-1 overflow-y-auto px-1.5 py-1.5">

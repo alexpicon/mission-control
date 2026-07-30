@@ -1,17 +1,23 @@
 import type { Project } from "../types";
 import type { MvpProgress } from "../mvp/diff";
+import type { NextMove, ProjectSnapshot } from "../mvp/nextMove";
 import { ProjectCard } from "../components/ProjectCard";
 import { SetupChecklist } from "../components/SetupChecklist";
+import { NextMoveCard } from "../components/NextMoveCard";
 import { isStale } from "../lib/time";
 
 export function Dashboard({
   projects,
   mvpProgress,
+  nextMove,
+  snapshots,
   onOpen,
   onNewProject,
 }: {
   projects: Project[];
   mvpProgress: Record<number, MvpProgress>;
+  nextMove: NextMove | null;
+  snapshots: ProjectSnapshot[];
   onOpen: (id: number) => void;
   onNewProject: () => void;
 }) {
@@ -59,6 +65,8 @@ export function Dashboard({
           </p>
         </div>
       </header>
+
+      <NextMoveCard move={nextMove} snapshots={snapshots} onOpenProject={onOpen} />
 
       <SetupChecklist projects={projects} />
 

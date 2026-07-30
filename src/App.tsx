@@ -12,8 +12,13 @@ import { Audit } from "./pages/Audit";
 import { Settings } from "./pages/Settings";
 import { showWidget, hideWidget } from "./lib/widget";
 import { ingestInbox } from "./cc/ingest";
-import { loadMvpProgressMap } from "./mvp/sync";
-import type { MvpProgress } from "./mvp/diff";
+import { computeMvpProgress, type MvpProgress } from "./mvp/diff";
+import {
+  loadSnapshots,
+  pickNextMove,
+  type NextMove,
+  type ProjectSnapshot,
+} from "./mvp/nextMove";
 import type { ShipResult } from "./types";
 import { loadXpSummary } from "./xp/summary";
 import { levelInfo, type LevelInfo } from "./xp/model";
@@ -33,6 +38,8 @@ export default function App() {
   const [leaderboardOn, setLeaderboardOn] = useState(false);
   const leaderboardOnRef = useRef(false);
   const [mvpProgress, setMvpProgress] = useState<Record<number, MvpProgress>>({});
+  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
+  const [nextMove, setNextMove] = useState<NextMove | null>(null);
   const [xpLevel, setXpLevel] = useState<LevelInfo>(levelInfo(0));
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [barPulse, setBarPulse] = useState(0); // bump to replay the bar glow
@@ -40,9 +47,21 @@ export default function App() {
   async function reload() {
     const p = await listProjects();
     setProjects(p);
-    const [mvp, xp] = await Promise.all([loadMvpProgressMap(p), loadXpSummary()]);
+
+    // One pass over the items feeds progress, the next-best-move pick, and the
+    // AI's context — instead of querying each project's items several times.
+    const snaps = await loadSnapshots(p);
+    setSnapshots(snaps);
+    setNextMove(pickNextMove(snaps));
+
+    const mvp: Record<number, MvpProgress> = {};
+    for (const s of snaps) {
+      if (s.project.progress_mode === "evidence") {
+        mvp[s.project.id] = computeMvpProgress(s.items);
+      }
+    }
     setMvpProgress(mvp);
-    setXpLevel(xp.level);
+    setXpLevel((await loadXpSummary()).level);
   }
 
   // Called whenever something ships. Celebrates the noteworthy ones and
@@ -178,6 +197,8 @@ export default function App() {
           <Dashboard
             projects={projects}
             mvpProgress={mvpProgress}
+            nextMove={nextMove}
+            snapshots={snapshots}
             onOpen={(id) => setView({ name: "project", id })}
             onNewProject={openNew}
           />
