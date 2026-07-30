@@ -78,3 +78,29 @@ Rules:
 
 After running #2 or #3: in Mission Control, open the project → **Scan MVP file → Approve**.
 Finished items credit XP; new items become your next climb.
+
+---
+
+## 4. Content / LinkedIn — track posts as shippable items
+
+For a content project (e.g. the LinkedIn chat). Each checklist line is **one post**.
+The rule that matters: **published = done. A written draft is NOT done.** That's what
+makes finished-but-unpublished work visible instead of invisible.
+
+```
+Create (or update) a checklist file at docs/mvp-checklist.md for my LinkedIn presence,
+so my project tracker can read it.
+Rules:
+- Three headings: ## Must have, ## Should have, ## Nice to have
+- Each line is ONE post: "- [ ] short post topic" (not published) or "- [x] short post topic" (published, live on LinkedIn)
+- ONLY [x] a post that is actually PUBLISHED. A written draft is NOT done.
+- ## Must have = posts I've committed to publishing (the current queue)
+- ## Should have = strong ideas worth writing next
+- ## Nice to have = someday/maybe ideas
+- Keep titles short — the topic, not the post text. Keep drafts in their own separate files.
+- Do NOT delete or reword existing items; when I publish one, just check it off
+- Nothing else in the file but the three sections and checkbox lines
+```
+
+Re-run it whenever you want to queue more posts (it checks off what you published and
+adds new ideas), then **Scan MVP file → Approve** in Mission Control.
