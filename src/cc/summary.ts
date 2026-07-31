@@ -32,6 +32,26 @@ function uniq(arr: string[]): string[] {
   return Array.from(new Set(arr.filter(Boolean)));
 }
 
+// Claude Code injects machine-generated turns (background-task notifications,
+// system reminders, slash-command echoes) into the transcript as user messages,
+// so the UserPromptSubmit hook sees them exactly like something you typed.
+// They aren't intent — they're plumbing — and they drown out the real prompt.
+const MACHINE_PROMPT = [
+  /^\s*<task-notification>/i,
+  /^\s*\[SYSTEM NOTIFICATION/i,
+  /^\s*<system-reminder>/i,
+  /^\s*<local-command-caveat>/i,
+  /^\s*<command-name>/i,
+  /^\s*<command-message>/i,
+  /^\s*Caveat: The messages below were generated/i,
+];
+
+function isMachinePrompt(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  return MACHINE_PROMPT.some((re) => re.test(t));
+}
+
 export interface BuiltSummary {
   summary: string;
   filesChanged: string; // newline-separated
@@ -46,7 +66,11 @@ export function buildSummary(project: Project, events: CcEvent[]): BuiltSummary 
 
   for (const e of events) {
     const p = parse(e);
-    if (e.event_name === "UserPromptSubmit" && typeof p.prompt === "string") {
+    if (
+      e.event_name === "UserPromptSubmit" &&
+      typeof p.prompt === "string" &&
+      !isMachinePrompt(p.prompt)
+    ) {
       prompts.push(p.prompt);
     }
     if (e.event_name === "PostToolUse") {
