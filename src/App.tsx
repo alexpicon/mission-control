@@ -22,6 +22,7 @@ import type { ShipResult } from "./types";
 import { loadXpSummary } from "./xp/summary";
 import { levelInfo, type LevelInfo } from "./xp/model";
 import { CelebrationToasts, type Toast } from "./components/CelebrationToasts";
+import { pickNudge, type Nudge } from "./lib/nudge";
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -41,6 +42,9 @@ export default function App() {
   const [xpLevel, setXpLevel] = useState<LevelInfo>(levelInfo(0));
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [barPulse, setBarPulse] = useState(0); // bump to replay the bar glow
+  // Dismissed nudges stay hidden for this app session only — a nudge that
+  // still matters comes back next launch rather than nagging now.
+  const [dismissedNudges, setDismissedNudges] = useState<Set<string>>(new Set());
 
   async function reload() {
     const p = await listProjects();
@@ -59,6 +63,22 @@ export default function App() {
     }
     setMvpProgress(mvp);
     setXpLevel((await loadXpSummary()).level);
+  }
+
+  // One nudge at a time, recomputed from live state.
+  const rawNudge = pickNudge(projects, mvpProgress, movesByProject);
+  const nudgeKey = rawNudge ? `${rawNudge.projectId}:${rawNudge.headline}` : "";
+  const nudge: Nudge | null =
+    rawNudge && !dismissedNudges.has(nudgeKey) ? rawNudge : null;
+
+  function dismissNudge() {
+    if (nudgeKey) setDismissedNudges((prev) => new Set(prev).add(nudgeKey));
+  }
+
+  // "Move the date" opens the project's edit form, where the date field lives.
+  function rescheduleProject(projectId: number) {
+    const p = projects.find((x) => x.id === projectId);
+    if (p) openEdit(p);
   }
 
   // Called whenever something ships. Celebrates the noteworthy ones and
@@ -195,6 +215,9 @@ export default function App() {
             projects={projects}
             mvpProgress={mvpProgress}
             movesByProject={movesByProject}
+            nudge={nudge}
+            onReschedule={rescheduleProject}
+            onDismissNudge={dismissNudge}
             onOpen={(id) => setView({ name: "project", id })}
             onNewProject={openNew}
           />

@@ -3,18 +3,27 @@ import type { MvpProgress } from "../mvp/diff";
 import type { NextMove } from "../mvp/nextMove";
 import { ProjectCard } from "../components/ProjectCard";
 import { SetupChecklist } from "../components/SetupChecklist";
+import { NudgeBar } from "../components/NudgeBar";
+import type { Nudge } from "../lib/nudge";
+import { urgencyRank, daysUntil } from "../lib/deadline";
 import { isStale } from "../lib/time";
 
 export function Dashboard({
   projects,
   mvpProgress,
   movesByProject,
+  nudge,
+  onReschedule,
+  onDismissNudge,
   onOpen,
   onNewProject,
 }: {
   projects: Project[];
   mvpProgress: Record<number, MvpProgress>;
   movesByProject: Record<number, NextMove>;
+  nudge: Nudge | null;
+  onReschedule: (id: number) => void;
+  onDismissNudge: () => void;
   onOpen: (id: number) => void;
   onNewProject: () => void;
 }) {
@@ -26,12 +35,25 @@ export function Dashboard({
     0
   );
 
-  // "Needs attention today" = blocked (by status or by a blocked MVP item) or stale.
+  // "Needs attention today" = blocked, stale, or inside its deadline window.
+  // Time-pressured work sorts to the front so a date that's actually close
+  // can't get lost behind everything else.
   const hasBlockedMvpItems = (p: Project) => (mvpProgress[p.id]?.blocked.length ?? 0) > 0;
+  const timePressured = (p: Project) => {
+    const d = daysUntil(p.deadline);
+    return d !== null && d <= 3 && p.status !== "Done";
+  };
   const attentionIds = new Set(
-    [...stale, ...blocked, ...projects.filter(hasBlockedMvpItems)].map((p) => p.id)
+    [
+      ...stale,
+      ...blocked,
+      ...projects.filter(hasBlockedMvpItems),
+      ...projects.filter(timePressured),
+    ].map((p) => p.id)
   );
-  const attention = projects.filter((p) => attentionIds.has(p.id));
+  const attention = projects
+    .filter((p) => attentionIds.has(p.id))
+    .sort((a, b) => urgencyRank(a.deadline) - urgencyRank(b.deadline));
 
   if (projects.length === 0) {
     return (
@@ -62,6 +84,15 @@ export function Dashboard({
           </p>
         </div>
       </header>
+
+      {nudge && (
+        <NudgeBar
+          nudge={nudge}
+          onOpenProject={onOpen}
+          onReschedule={onReschedule}
+          onDismiss={onDismissNudge}
+        />
+      )}
 
       <SetupChecklist projects={projects} />
 

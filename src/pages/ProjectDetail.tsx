@@ -5,6 +5,7 @@ import { UPDATE_KINDS } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
 import { ProgressBar } from "../components/ProgressBar";
 import { StaleTag } from "../components/StaleTag";
+import { DeadlineBadge } from "../components/DeadlineBadge";
 import { ProposedUpdates } from "../components/ProposedUpdates";
 import { MvpSection } from "../components/MvpSection";
 import { relativeTime } from "../lib/time";
@@ -160,6 +161,16 @@ export function ProjectDetail({
             <dd className="flex items-center gap-2 text-zinc-700">
               {relativeTime(project.updated_at)}
               <StaleTag project={project} />
+            </dd>
+          </div>
+          <div className="flex items-center gap-2">
+            <dt className="w-20 shrink-0 text-zinc-400">Target</dt>
+            <dd className="flex items-center gap-2 text-zinc-700">
+              {project.deadline ? (
+                <DeadlineBadge deadline={project.deadline} />
+              ) : (
+                <span className="text-zinc-400">no date set</span>
+              )}
             </dd>
           </div>
           <div className="flex gap-2">

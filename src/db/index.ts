@@ -57,8 +57,8 @@ export async function getFocusProject(): Promise<Project | null> {
 export async function createProject(input: ProjectInput): Promise<number> {
   const db = await conn();
   const res = await db.execute(
-    `INSERT INTO projects (name, goal, status, progress, blocker, next_step, path, mvp_file_path)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT INTO projects (name, goal, status, progress, blocker, next_step, path, mvp_file_path, deadline)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       input.name,
       input.goal,
@@ -68,6 +68,7 @@ export async function createProject(input: ProjectInput): Promise<number> {
       input.next_step,
       input.path,
       input.mvp_file_path,
+      input.deadline,
     ]
   );
   return res.lastInsertId as number;
@@ -84,8 +85,8 @@ export async function updateProject(id: number, input: ProjectInput): Promise<vo
     `UPDATE projects
        SET name = $1, goal = $2, status = $3, progress = $4,
            blocker = $5, next_step = $6, path = $7, mvp_file_path = $8,
-           updated_at = datetime('now')${modeClause}
-     WHERE id = $9`,
+           deadline = $9, updated_at = datetime('now')${modeClause}
+     WHERE id = $10`,
     [
       input.name,
       input.goal,
@@ -95,6 +96,7 @@ export async function updateProject(id: number, input: ProjectInput): Promise<vo
       input.next_step,
       input.path,
       input.mvp_file_path,
+      input.deadline,
       id,
     ]
   );

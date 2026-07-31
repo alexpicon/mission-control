@@ -157,6 +157,13 @@ CREATE TABLE IF NOT EXISTS achievements_unlocked (
 );
 "#;
 
+// Deadlines. A target date per project, stored as plain 'YYYY-MM-DD' so the
+// countdown is computed in local time and never drifts with timezones.
+// Empty string = no deadline set (deadlines are opt-in, never required).
+const SCHEMA_V5: &str = r#"
+ALTER TABLE projects ADD COLUMN deadline TEXT NOT NULL DEFAULT '';
+"#;
+
 // The shell command every hook runs: dump the event JSON (from stdin) to a
 // uniquely-named file in the shared inbox. No server, no port. `$$` is the hook
 // process PID; combined with the epoch second it is unique per invocation.
@@ -616,6 +623,12 @@ pub fn run() {
             version: 4,
             description: "xp + achievements: ship_events, achievements_unlocked",
             sql: SCHEMA_V4,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 5,
+            description: "deadlines: per-project target date",
+            sql: SCHEMA_V5,
             kind: MigrationKind::Up,
         },
     ];

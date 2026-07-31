@@ -19,6 +19,7 @@ export interface Project {
   is_focus: number; // 0 | 1
   path: string; // local folder path; connects the app to a real codebase
   claude_connected: number; // 0 | 1
+  deadline: string; // 'YYYY-MM-DD', or '' for none — opt-in, never required
   mvp_file_path: string; // relative or absolute path to the connected MVP/spec file
   mvp_file_hash: string; // content hash as of the last time the file was scanned
   mvp_file_mtime: string; // file mtime (epoch seconds, as string) as of last scan
@@ -50,6 +51,7 @@ export interface ProjectInput {
   next_step: string;
   path: string;
   mvp_file_path: string;
+  deadline: string;
 }
 
 // A proposed (not yet applied) update generated from a Claude Code session.

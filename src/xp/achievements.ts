@@ -34,6 +34,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     description: "Ship in a project that had gone stale.",
     perProject: true,
   },
+  {
+    key: "beat_the_clock",
+    title: "Beat the Clock",
+    description: "Finish every must-have before the target date.",
+    perProject: true,
+  },
 ];
 
 export const ACHIEVEMENTS_BY_KEY: Record<string, AchievementDef> = Object.fromEntries(
@@ -46,6 +52,7 @@ export interface AchievementContext {
   projectId: number; // the project just shipped into
   projectItems: MvpItem[]; // current mvp_items for that project (post-ship)
   projectWasStale: boolean; // was this project stale at the moment of shipping?
+  beforeDeadline: boolean; // project has a target date and it hasn't passed
 }
 
 // An unlock is identified by (key, project_id). Global achievements use
@@ -71,8 +78,14 @@ export function evaluateAchievements(ctx: AchievementContext): AchievementUnlock
 
   // "Shipped It": every must-have in this project is done (and there's at least one).
   const must = ctx.projectItems.filter((i) => i.priority === "must_have" && i.status !== "cut");
-  if (must.length > 0 && must.every((i) => i.status === "done")) {
+  const allMustDone = must.length > 0 && must.every((i) => i.status === "done");
+  if (allMustDone) {
     unlocks.push({ key: "shipped_it", project_id: ctx.projectId });
+    // Rewarding beating the date — the research is clear that rewards
+    // motivate far more than the threat of missing one.
+    if (ctx.beforeDeadline) {
+      unlocks.push({ key: "beat_the_clock", project_id: ctx.projectId });
+    }
   }
 
   if (ctx.projectWasStale) {

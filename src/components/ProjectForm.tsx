@@ -11,6 +11,7 @@ const EMPTY: ProjectInput = {
   next_step: "",
   path: "",
   mvp_file_path: "",
+  deadline: "",
 };
 
 function fromProject(p: Project): ProjectInput {
@@ -23,6 +24,7 @@ function fromProject(p: Project): ProjectInput {
     next_step: p.next_step,
     path: p.path,
     mvp_file_path: p.mvp_file_path,
+    deadline: p.deadline,
   };
 }
 
@@ -167,6 +169,33 @@ export function ProjectForm({
               onChange={(e) => set("mvp_file_path", e.target.value)}
               placeholder="docs/MVP.md"
             />
+          </div>
+
+          <div>
+            <label className={labelCls} htmlFor="pf-deadline">
+              Target date{" "}
+              <span className="font-normal text-zinc-400">
+                (optional — shows a live countdown)
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="pf-deadline"
+                type="date"
+                className={inputCls}
+                value={form.deadline}
+                onChange={(e) => set("deadline", e.target.value)}
+              />
+              {form.deadline && (
+                <button
+                  type="button"
+                  onClick={() => set("deadline", "")}
+                  className="shrink-0 rounded-lg px-2 py-2 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           <details className="rounded-lg border border-zinc-200 px-3 py-2">

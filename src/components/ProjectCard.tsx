@@ -4,6 +4,7 @@ import type { NextMove } from "../mvp/nextMove";
 import { StatusBadge } from "./StatusBadge";
 import { ProgressBar } from "./ProgressBar";
 import { StaleTag } from "./StaleTag";
+import { DeadlineBadge } from "./DeadlineBadge";
 import { relativeTime } from "../lib/time";
 
 export function ProjectCard({
@@ -37,6 +38,12 @@ export function ProjectCard({
         </div>
         <StatusBadge status={project.status} />
       </div>
+
+      {project.deadline && (
+        <div>
+          <DeadlineBadge deadline={project.deadline} />
+        </div>
+      )}
 
       {evidence ? (
         <div className="flex items-center gap-2">

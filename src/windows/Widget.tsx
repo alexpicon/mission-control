@@ -10,6 +10,7 @@ import {
 import { listProjects } from "../db";
 import { loadXpSummary } from "../xp/summary";
 import { isStale } from "../lib/time";
+import { countdownLabel, urgencyOf, urgencyRank, URGENCY_DOT } from "../lib/deadline";
 import type { LevelInfo } from "../xp/model";
 import { levelInfo } from "../xp/model";
 
@@ -56,8 +57,10 @@ export function Widget() {
           blocked: p.status === "Blocked" || (prog?.blocked.length ?? 0) > 0,
         };
       });
-      // Rank: things needing attention first (blocked/stale), then by % descending.
+      // Rank: soonest deadline first, then attention items, then by % desc.
       built.sort((a, b) => {
+        const byDate = urgencyRank(a.project.deadline) - urgencyRank(b.project.deadline);
+        if (byDate !== 0) return byDate;
         const aAttn = a.blocked || a.stale ? 1 : 0;
         const bAttn = b.blocked || b.stale ? 1 : 0;
         if (aAttn !== bAttn) return bAttn - aAttn;
@@ -149,13 +152,15 @@ export function Widget() {
                   >
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${
-                        blocked
-                          ? "bg-amber-500"
-                          : stale
-                            ? "bg-orange-400"
-                            : pct >= 100
-                              ? "bg-emerald-500"
-                              : "bg-zinc-300"
+                        project.deadline
+                          ? URGENCY_DOT[urgencyOf(project.deadline)]
+                          : blocked
+                            ? "bg-amber-500"
+                            : stale
+                              ? "bg-orange-400"
+                              : pct >= 100
+                                ? "bg-emerald-500"
+                                : "bg-zinc-300"
                       }`}
                       aria-hidden
                     />
@@ -187,6 +192,11 @@ export function Widget() {
                           <p className="text-xs leading-snug text-zinc-900">
                             {projectMove.title}
                           </p>
+                          {countdownLabel(project.deadline) && (
+                            <p className="mt-0.5 text-[11px] font-medium text-zinc-500">
+                              🗓 {countdownLabel(project.deadline)}
+                            </p>
+                          )}
                         </>
                       )}
                     </div>

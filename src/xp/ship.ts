@@ -5,6 +5,7 @@
 
 import type { MvpItem, MvpPriority, Project, ShipResult } from "../types";
 import { isStale } from "../lib/time";
+import { daysUntil } from "../lib/deadline";
 import { xpForPriority, levelForXp } from "./model";
 import { evaluateAchievements } from "./achievements";
 import {
@@ -23,11 +24,13 @@ async function evaluateAndUnlock(project: Project, wasStale: boolean): Promise<s
     listShipEvents(),
     listMvpItems(project.id),
   ]);
+  const days = daysUntil(project.deadline);
   const unlocks = evaluateAchievements({
     allShipEvents,
     projectId: project.id,
     projectItems,
     projectWasStale: wasStale,
+    beforeDeadline: days !== null && days >= 0,
   });
   const newly: string[] = [];
   for (const u of unlocks) {
