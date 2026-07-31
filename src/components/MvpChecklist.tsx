@@ -121,9 +121,17 @@ export function MvpChecklist({
   onChanged: () => void;
   onShipped: (r: ShipResult) => void;
 }) {
-  const groups: { priority: MvpPriority; items: MvpItem[] }[] = (
+  // Split so the list you look at is only the work that's left.
+  const openItems = items.filter((i) => i.status !== "done" && i.status !== "cut");
+  const doneItems = items.filter((i) => i.status === "done");
+  const cutItems = items.filter((i) => i.status === "cut");
+
+  const openGroups: { priority: MvpPriority; items: MvpItem[] }[] = (
     ["must_have", "should_have", "nice_to_have"] as MvpPriority[]
-  ).map((priority) => ({ priority, items: items.filter((i) => i.priority === priority) }));
+  ).map((priority) => ({
+    priority,
+    items: openItems.filter((i) => i.priority === priority),
+  }));
 
   return (
     <div className="space-y-4">
@@ -149,70 +157,99 @@ export function MvpChecklist({
           <span>Nice-to-have: {progress.nice.done}/{progress.nice.total} done</span>
         </div>
 
-        {progress.inProgress.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
-              In progress
-            </p>
-            <ul className="mt-1 space-y-0.5 text-sm text-zinc-700">
-              {progress.inProgress.map((i) => (
-                <li key={i.id}>- {i.title}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+      </div>
 
-        {progress.blocked.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
-              Blocked
-            </p>
-            <ul className="mt-1 space-y-0.5 text-sm text-zinc-700">
-              {progress.blocked.map((i) => (
-                <li key={i.id}>- {i.title}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+      {/* To do — only what's actually actionable, so the list reads as work */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="mb-1 flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-zinc-900">To do</h3>
+          <span className="text-xs text-zinc-400">
+            {openItems.length} open
+          </span>
+        </div>
 
-        {progress.missingMust.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Missing (must-have)
-            </p>
-            <ul className="mt-1 space-y-0.5 text-sm text-zinc-700">
-              {progress.missingMust.map((i) => (
-                <li key={i.id}>- {i.title}</li>
-              ))}
-            </ul>
-          </div>
+        {openItems.length === 0 ? (
+          <p className="py-3 text-sm text-zinc-500">
+            Nothing open — everything on this checklist is done. 🏆
+          </p>
+        ) : (
+          openGroups.map(
+            (g) =>
+              g.items.length > 0 && (
+                <div key={g.priority} className="mt-3 first:mt-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    {PRIORITY_LABEL[g.priority]}
+                  </p>
+                  <ul>
+                    {g.items.map((item) => (
+                      <Row
+                        key={item.id}
+                        item={item}
+                        project={project}
+                        onChanged={onChanged}
+                        onShipped={onShipped}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              )
+          )
         )}
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <h3 className="mb-1 text-sm font-semibold text-zinc-900">Checklist</h3>
-        {groups.map(
-          (g) =>
-            g.items.length > 0 && (
-              <div key={g.priority} className="mt-3 first:mt-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  {PRIORITY_LABEL[g.priority]}
-                </p>
-                <ul>
-                  {g.items.map((item) => (
-                    <Row
-                      key={item.id}
-                      item={item}
-                      project={project}
-                      onChanged={onChanged}
-                      onShipped={onShipped}
-                    />
-                  ))}
-                </ul>
-              </div>
-            )
-        )}
-      </div>
+      {/* Done — collapsed by default. Kept visible as a record of what you've
+          shipped, but out of the way of what's left. */}
+      {(doneItems.length > 0 || cutItems.length > 0) && (
+        <details className="group rounded-2xl border border-zinc-200 bg-white p-4">
+          <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-zinc-900">
+            <span>
+              Done{" "}
+              <span className="font-normal text-zinc-400">
+                ({doneItems.length}
+                {cutItems.length > 0 ? ` · ${cutItems.length} cut` : ""})
+              </span>
+            </span>
+            <span className="text-xs font-normal text-zinc-400 group-open:hidden">
+              show
+            </span>
+            <span className="hidden text-xs font-normal text-zinc-400 group-open:inline">
+              hide
+            </span>
+          </summary>
+
+          <ul className="mt-2">
+            {doneItems.map((item) => (
+              <Row
+                key={item.id}
+                item={item}
+                project={project}
+                onChanged={onChanged}
+                onShipped={onShipped}
+              />
+            ))}
+          </ul>
+
+          {cutItems.length > 0 && (
+            <>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Cut from scope
+              </p>
+              <ul>
+                {cutItems.map((item) => (
+                  <Row
+                    key={item.id}
+                    item={item}
+                    project={project}
+                    onChanged={onChanged}
+                    onShipped={onShipped}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+        </details>
+      )}
+
     </div>
   );
 }
