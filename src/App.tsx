@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Project, ProjectInput } from "./types";
 import type { View } from "./nav";
-import { listProjects, createProject, updateProject, getSetting, setSetting } from "./db";
+import {
+  listProjects,
+  createProject,
+  updateProject,
+  getSetting,
+  setSetting,
+  setDeadline,
+  countShipEvents,
+  xpByProject,
+} from "./db";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectForm } from "./components/ProjectForm";
 import { Dashboard } from "./pages/Dashboard";
@@ -23,6 +32,7 @@ import { loadXpSummary } from "./xp/summary";
 import { levelInfo, type LevelInfo } from "./xp/model";
 import { CelebrationToasts, type Toast } from "./components/CelebrationToasts";
 import { pickNudge, type Nudge } from "./lib/nudge";
+import { suggestForAll } from "./lib/suggestDeadline";
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -45,6 +55,8 @@ export default function App() {
   // Dismissed nudges stay hidden for this app session only — a nudge that
   // still matters comes back next launch rather than nagging now.
   const [dismissedNudges, setDismissedNudges] = useState<Set<string>>(new Set());
+  const [shipped, setShipped] = useState(0);
+  const [xpMap, setXpMap] = useState<Record<number, number>>({});
 
   async function reload() {
     const p = await listProjects();
@@ -62,7 +74,32 @@ export default function App() {
       }
     }
     setMvpProgress(mvp);
-    setXpLevel((await loadXpSummary()).level);
+    const [xp, shipCount, perProject] = await Promise.all([
+      loadXpSummary(),
+      countShipEvents(),
+      xpByProject(),
+    ]);
+    setXpLevel(xp.level);
+    setShipped(shipCount);
+    setXpMap(perProject);
+  }
+
+  // Sets a tight target date on every project that doesn't have one, paced off
+  // the must-haves actually left. Never overwrites a date you already chose.
+  async function applySuggestedDeadlines() {
+    const suggestions = suggestForAll(projects, mvpProgress);
+    if (suggestions.length === 0) return;
+    const lines = suggestions
+      .map((s) => `• ${s.project.name} → ${s.suggestion.days} days (${s.suggestion.reason})`)
+      .join("\n");
+    const ok = window.confirm(
+      `Set target dates on ${suggestions.length} project(s)?\n\n${lines}\n\nThese are deliberately tight. You can change any of them in Edit.`
+    );
+    if (!ok) return;
+    for (const s of suggestions) {
+      await setDeadline(s.project.id, s.suggestion.date);
+    }
+    await reload();
   }
 
   // One nudge at a time, recomputed from live state.
@@ -216,6 +253,10 @@ export default function App() {
             mvpProgress={mvpProgress}
             movesByProject={movesByProject}
             nudge={nudge}
+            level={xpLevel}
+            shipped={shipped}
+            xpByProjectMap={xpMap}
+            onSetDeadlines={applySuggestedDeadlines}
             onReschedule={rescheduleProject}
             onDismissNudge={dismissNudge}
             onOpen={(id) => setView({ name: "project", id })}

@@ -6,6 +6,8 @@ import { SetupChecklist } from "../components/SetupChecklist";
 import { NudgeBar } from "../components/NudgeBar";
 import type { Nudge } from "../lib/nudge";
 import { urgencyRank, daysUntil } from "../lib/deadline";
+import { StatsStrip } from "../components/StatsStrip";
+import type { LevelInfo } from "../xp/model";
 import { isStale } from "../lib/time";
 
 export function Dashboard({
@@ -13,6 +15,10 @@ export function Dashboard({
   mvpProgress,
   movesByProject,
   nudge,
+  level,
+  shipped,
+  xpByProjectMap,
+  onSetDeadlines,
   onReschedule,
   onDismissNudge,
   onOpen,
@@ -22,12 +28,17 @@ export function Dashboard({
   mvpProgress: Record<number, MvpProgress>;
   movesByProject: Record<number, NextMove>;
   nudge: Nudge | null;
+  level: LevelInfo;
+  shipped: number;
+  xpByProjectMap: Record<number, number>;
+  onSetDeadlines: () => void;
   onReschedule: (id: number) => void;
   onDismissNudge: () => void;
   onOpen: (id: number) => void;
   onNewProject: () => void;
 }) {
   const active = projects.filter((p) => p.status !== "Done");
+  const live = active;
   const stale = projects.filter(isStale);
   const blocked = projects.filter((p) => p.status === "Blocked");
   const blockedMvpItems = Object.values(mvpProgress).reduce(
@@ -55,6 +66,15 @@ export function Dashboard({
     .filter((p) => attentionIds.has(p.id))
     .sort((a, b) => urgencyRank(a.deadline) - urgencyRank(b.deadline));
 
+  const dueSoon = live.filter((p) => {
+    const d = daysUntil(p.deadline);
+    return d !== null && d <= 3;
+  }).length;
+  // Projects that could take a date but don't have one yet.
+  const withoutDates = live.filter(
+    (p) => !p.deadline.trim() && (mvpProgress[p.id]?.totalMust ?? 0) > 0
+  ).length;
+
   if (projects.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-center">
@@ -75,15 +95,33 @@ export function Dashboard({
 
   return (
     <div className="space-y-6">
-      <header className="flex items-end justify-between">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Dashboard</h1>
           <p className="text-sm text-zinc-500">
-            {active.length} active · {blocked.length} blocked · {stale.length} stale
-            {blockedMvpItems > 0 && ` · ${blockedMvpItems} blocked MVP item(s)`}
+            {blockedMvpItems > 0
+              ? `${blockedMvpItems} blocked item${blockedMvpItems === 1 ? "" : "s"} across your work`
+              : "Everything you're building, in one place."}
           </p>
         </div>
+        {withoutDates > 0 && (
+          <button
+            onClick={onSetDeadlines}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50"
+            title="Sets a tight target date on every project that doesn't have one, based on the must-haves left"
+          >
+            ⏱ Set my deadlines ({withoutDates})
+          </button>
+        )}
       </header>
+
+      <StatsStrip
+        level={level}
+        shipped={shipped}
+        dueSoon={dueSoon}
+        stale={stale.length}
+        activeCount={active.length}
+      />
 
       {nudge && (
         <NudgeBar
@@ -108,6 +146,7 @@ export function Dashboard({
                 project={p}
                 mvpProgress={mvpProgress[p.id]}
                 nextMove={movesByProject[p.id]}
+                xp={xpByProjectMap[p.id]}
                 onOpen={onOpen}
               />
             ))}
@@ -126,6 +165,7 @@ export function Dashboard({
                 project={p}
                 mvpProgress={mvpProgress[p.id]}
                 nextMove={movesByProject[p.id]}
+                xp={xpByProjectMap[p.id]}
                 onOpen={onOpen}
               />
           ))}

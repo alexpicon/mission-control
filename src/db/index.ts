@@ -102,6 +102,11 @@ export async function updateProject(id: number, input: ProjectInput): Promise<vo
   );
 }
 
+export async function setDeadline(id: number, deadline: string): Promise<void> {
+  const db = await conn();
+  await db.execute(`UPDATE projects SET deadline = $1 WHERE id = $2`, [deadline, id]);
+}
+
 export async function setProgressMode(id: number, mode: "manual" | "evidence"): Promise<void> {
   const db = await conn();
   await db.execute(`UPDATE projects SET progress_mode = $1 WHERE id = $2`, [mode, id]);
@@ -604,6 +609,23 @@ export async function insertShipEvent(e: {
      VALUES ($1, $2, $3, $4, $5)`,
     [e.project_id, e.mvp_item_id, e.title, e.priority, e.xp]
   );
+}
+
+export async function countShipEvents(): Promise<number> {
+  const db = await conn();
+  const rows = await db.select<{ n: number }[]>(`SELECT COUNT(*) as n FROM ship_events`);
+  return rows[0]?.n ?? 0;
+}
+
+// XP earned per project, keyed by project id — used on the dashboard cards.
+export async function xpByProject(): Promise<Record<number, number>> {
+  const db = await conn();
+  const rows = await db.select<{ project_id: number; n: number }[]>(
+    `SELECT project_id, COALESCE(SUM(xp), 0) as n FROM ship_events GROUP BY project_id`
+  );
+  const map: Record<number, number> = {};
+  for (const r of rows) map[r.project_id] = r.n;
+  return map;
 }
 
 export async function totalXp(): Promise<number> {
