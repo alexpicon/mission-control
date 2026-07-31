@@ -502,6 +502,25 @@ export async function upsertProposedItemUpdate(u: {
   }
 }
 
+// Bulk-dismiss every pending proposal for a project. These only ever suggest
+// "in progress", which doesn't move any number — so clearing them is safe and
+// loses nothing.
+export async function rejectAllItemUpdates(projectId: number): Promise<void> {
+  const db = await conn();
+  await db.execute(
+    `UPDATE proposed_item_updates SET status = 'rejected' WHERE project_id = $1 AND status = 'pending'`,
+    [projectId]
+  );
+}
+
+export async function rejectAllProposedUpdates(projectId: number): Promise<void> {
+  const db = await conn();
+  await db.execute(
+    `UPDATE proposed_updates SET status = 'rejected' WHERE project_id = $1 AND status = 'pending'`,
+    [projectId]
+  );
+}
+
 export async function setItemUpdateStatus(
   id: number,
   status: ProposedItemUpdate["status"]

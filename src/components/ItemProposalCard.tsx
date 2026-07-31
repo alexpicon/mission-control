@@ -22,6 +22,13 @@ export function ItemProposalCard({
   const [status, setStatus] = useState<MvpItemStatus>(update.suggested_status);
   const [busy, setBusy] = useState(false);
 
+  // Evidence is stored as "Files changed:\n- path\n- path"; show a few inline
+  // and hide the rest, so a 25-file session doesn't swamp the card.
+  const files = update.evidence
+    .split("\n")
+    .filter((l) => l.startsWith("- "))
+    .map((l) => l.slice(2).trim());
+
   async function approve(applyStatus: MvpItemStatus) {
     setBusy(true);
     try {
@@ -59,10 +66,29 @@ export function ItemProposalCard({
         <span className="font-medium">{update.suggested_status.replace("_", " ")}</span>
       </p>
 
-      {update.evidence && (
-        <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-white/70 p-2 font-sans text-xs text-zinc-600">
-          {update.evidence}
-        </pre>
+      {files.length > 0 && (
+        <div className="mt-2 rounded-lg bg-white/70 p-2">
+          <p className="text-[11px] text-zinc-500">
+            {files.slice(0, 3).join(", ")}
+            {files.length > 3 && (
+              <span className="text-zinc-400"> and {files.length - 3} more</span>
+            )}
+          </p>
+          {files.length > 3 && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-600">
+                see all {files.length} files
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {files.map((f) => (
+                  <li key={f} className="truncate text-[11px] text-zinc-500">
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       )}
 
       {editing ? (

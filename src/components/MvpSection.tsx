@@ -15,6 +15,7 @@ import {
   listPendingItemUpdates,
   listShipEventsForProject,
   listUnlockedAchievements,
+  rejectAllItemUpdates,
 } from "../db";
 import { checkMvpFile, scanFolder } from "../mvp/sync";
 import { pickNextMoveForProject, type NextMove } from "../mvp/nextMove";
@@ -311,12 +312,26 @@ export function MvpSection({
 
       {itemUpdates.length > 0 && (
         <section>
-          <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Proposed progress updates
-            <span className="rounded-full bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
-              {itemUpdates.length}
-            </span>
-          </h3>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Suggestions
+              <span className="rounded-full bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
+                {itemUpdates.length}
+              </span>
+            </h3>
+            {itemUpdates.length > 1 && (
+              <button
+                onClick={async () => {
+                  await rejectAllItemUpdates(project.id);
+                  await load();
+                }}
+                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
+                title="These only ever suggest 'in progress', which doesn't change your percentage — clearing them loses nothing"
+              >
+                Dismiss all
+              </button>
+            )}
+          </div>
           <ul className="space-y-3">
             {itemUpdates.map((u) => {
               const item = itemsById.get(u.mvp_item_id);
