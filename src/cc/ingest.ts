@@ -8,11 +8,9 @@ import {
   listProjects,
   insertCcEvent,
   getSessionEvents,
-  findProposedForSession,
-  insertProposedUpdate,
-  updateProposedContent,
   listMvpItems,
-  upsertProposedItemUpdate,
+  setMvpItemStatus,
+  recordSessionUpdate,
 } from "../db";
 import { buildSummary } from "./summary";
 import { matchFilesToItems, formatEvidence } from "../mvp/evidence";
@@ -69,51 +67,35 @@ export async function ingestInbox(): Promise<number> {
   }
 
   for (const [sessionId, project] of touched) {
-    await refreshProposed(project, sessionId);
+    await recordSession(project, sessionId);
   }
   return raw.length;
 }
 
-async function refreshProposed(project: Project, sessionId: string): Promise<void> {
+async function recordSession(project: Project, sessionId: string): Promise<void> {
   const events = await getSessionEvents(project.id, sessionId);
   const turnEnded = events.some(
     (e) => e.event_name === "Stop" || e.event_name === "SessionEnd"
   );
-  if (!turnEnded) return; // wait until a turn completes before proposing
+  if (!turnEnded) return; // wait until a turn completes
 
-  const existing = await findProposedForSession(project.id, sessionId);
-  const { summary, filesChanged } = buildSummary(project, events);
-  if (!existing || existing.status === "pending") {
-    if (existing) {
-      await updateProposedContent(existing.id, summary, filesChanged);
-    } else {
-      await insertProposedUpdate({
-        project_id: project.id,
-        session_id: sessionId,
-        summary,
-        files_changed: filesChanged,
-      });
-    }
-  }
+  const { summary, filesChanged, hasEvidence } = buildSummary(project, events);
+  if (!hasEvidence) return;
 
-  // Evidence-based progress: if this project has MVP items, propose item
-  // status changes from the files this session touched. Never marks an item
-  // "done" from Claude Code activity alone — only ever suggests in_progress,
-  // and only as a pending proposal the user must approve.
+  // File the session straight into the timeline. No approval queue — it's a
+  // factual log of work that already happened, and it changes no number.
+  await recordSessionUpdate(project.id, sessionId, summary);
+
+  // Mark matched items as in progress automatically. Safe to apply without
+  // asking because "in progress" is excluded from the percentage — only "done"
+  // counts, and done still requires an explicit ship.
   if (project.progress_mode === "evidence" && filesChanged) {
     const items = await listMvpItems(project.id);
     const changedFiles = filesChanged.split("\n").filter(Boolean);
-    const matches = matchFilesToItems(changedFiles, items);
-    for (const m of matches) {
-      await upsertProposedItemUpdate({
-        project_id: project.id,
-        mvp_item_id: m.item.id,
-        suggested_status: "in_progress",
-        evidence: formatEvidence(m),
-        confidence: m.confidence,
-        source: "claude-code",
-        session_id: sessionId,
-      });
+    for (const m of matchFilesToItems(changedFiles, items)) {
+      if (m.item.status === "not_started") {
+        await setMvpItemStatus(m.item.id, "in_progress", formatEvidence(m));
+      }
     }
   }
 }

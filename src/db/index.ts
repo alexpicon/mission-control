@@ -171,6 +171,39 @@ export async function addUpdate(
   );
 }
 
+// Files a Claude Code session into the timeline automatically, exactly once
+// per session. No approval queue: this is a factual, deterministic log of what
+// happened, and it moves no percentage — unlike a status change, which stays
+// explicit.
+export async function recordSessionUpdate(
+  projectId: number,
+  sessionId: string,
+  body: string
+): Promise<boolean> {
+  const db = await conn();
+  const existing = await db.select<{ n: number }[]>(
+    `SELECT COUNT(*) as n FROM updates WHERE project_id = $1 AND session_id = $2`,
+    [projectId, sessionId]
+  );
+  if ((existing[0]?.n ?? 0) > 0) {
+    await db.execute(
+      `UPDATE updates SET body = $1 WHERE project_id = $2 AND session_id = $3`,
+      [body, projectId, sessionId]
+    );
+    return false;
+  }
+  await db.execute(
+    `INSERT INTO updates (project_id, kind, body, source, status, session_id)
+     VALUES ($1, 'progress', $2, 'claude-code', 'accepted', $3)`,
+    [projectId, body, sessionId]
+  );
+  await db.execute(
+    `UPDATE projects SET updated_at = datetime('now') WHERE id = $1`,
+    [projectId]
+  );
+  return true;
+}
+
 // --- Settings (key/value) -------------------------------------------------
 
 export async function getSetting(key: string): Promise<string | null> {

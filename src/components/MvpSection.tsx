@@ -3,7 +3,6 @@ import type {
   MvpItem,
   MvpPriority,
   Project,
-  ProposedItemUpdate,
   ProposedScopeUpdate,
   ShipEvent,
   ShipResult,
@@ -12,10 +11,8 @@ import type {
 import {
   listMvpItems,
   listPendingScopeUpdates,
-  listPendingItemUpdates,
   listShipEventsForProject,
   listUnlockedAchievements,
-  rejectAllItemUpdates,
 } from "../db";
 import { checkMvpFile, scanFolder } from "../mvp/sync";
 import { pickNextMoveForProject, type NextMove } from "../mvp/nextMove";
@@ -26,7 +23,6 @@ import { computeMvpProgress } from "../mvp/diff";
 import { relativeTime } from "../lib/time";
 import { MvpChecklist } from "./MvpChecklist";
 import { ScopeUpdateCard } from "./ScopeUpdateCard";
-import { ItemProposalCard } from "./ItemProposalCard";
 import { Achievements } from "./Achievements";
 
 export function MvpSection({
@@ -40,7 +36,6 @@ export function MvpSection({
 }) {
   const [items, setItems] = useState<MvpItem[]>([]);
   const [scopeUpdates, setScopeUpdates] = useState<ProposedScopeUpdate[]>([]);
-  const [itemUpdates, setItemUpdates] = useState<ProposedItemUpdate[]>([]);
   const [shipEvents, setShipEvents] = useState<ShipEvent[]>([]);
   const [unlocked, setUnlocked] = useState<UnlockedAchievement[]>([]);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
@@ -55,16 +50,14 @@ export function MvpSection({
   const [aiNote, setAiNote] = useState<string | null>(null);
 
   async function load() {
-    const [i, s, u, se, ach] = await Promise.all([
+    const [i, s, se, ach] = await Promise.all([
       listMvpItems(project.id),
       listPendingScopeUpdates(project.id),
-      listPendingItemUpdates(project.id),
       listShipEventsForProject(project.id),
       listUnlockedAchievements(),
     ]);
     setItems(i);
     setScopeUpdates(s);
-    setItemUpdates(u);
     setShipEvents(se);
     setUnlocked(ach);
   }
@@ -133,7 +126,6 @@ export function MvpSection({
   }
 
   const progress = computeMvpProgress(items);
-  const itemsById = new Map(items.map((i) => [i.id, i]));
   const autoMove = pickNextMoveForProject({ project, items });
   const nextMove = aiMove ?? autoMove;
 
@@ -306,40 +298,6 @@ export function MvpSection({
                 }}
               />
             ))}
-          </ul>
-        </section>
-      )}
-
-      {itemUpdates.length > 0 && (
-        <section>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Suggestions
-              <span className="rounded-full bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
-                {itemUpdates.length}
-              </span>
-            </h3>
-            {itemUpdates.length > 1 && (
-              <button
-                onClick={async () => {
-                  await rejectAllItemUpdates(project.id);
-                  await load();
-                }}
-                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
-                title="These only ever suggest 'in progress', which doesn't change your percentage — clearing them loses nothing"
-              >
-                Dismiss all
-              </button>
-            )}
-          </div>
-          <ul className="space-y-3">
-            {itemUpdates.map((u) => {
-              const item = itemsById.get(u.mvp_item_id);
-              if (!item) return null;
-              return (
-                <ItemProposalCard key={u.id} update={u} item={item} onResolved={load} />
-              );
-            })}
           </ul>
         </section>
       )}

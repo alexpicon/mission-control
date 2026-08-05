@@ -6,7 +6,6 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ProgressBar } from "../components/ProgressBar";
 import { StaleTag } from "../components/StaleTag";
 import { DeadlineBadge } from "../components/DeadlineBadge";
-import { ProposedUpdates } from "../components/ProposedUpdates";
 import { MvpSection } from "../components/MvpSection";
 import { relativeTime } from "../lib/time";
 import {
@@ -262,15 +261,6 @@ export function ProjectDetail({
 
       {/* Evidence-based progress: MVP file, checklist, XP shipping, scope/item updates */}
       <MvpSection project={project} onProjectChanged={onChanged} onShipped={onShipped} />
-
-      {/* Claude Code session log (free-text summaries) — require explicit approval */}
-      <ProposedUpdates
-        projectId={project.id}
-        onApplied={async () => {
-          await loadUpdates();
-          onChanged();
-        }}
-      />
 
       {/* Add update */}
       <form

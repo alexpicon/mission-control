@@ -26,7 +26,6 @@ import {
   setProgressMode,
   setScopeUpdateStatus,
   updateMvpItemFields,
-  upsertProposedItemUpdate,
 } from "../db";
 import { parseMvpMarkdown } from "./parse";
 import { computeMvpProgress, diffMvpItems, hasMeaningfulDiff, simulateApply } from "./diff";
@@ -251,19 +250,14 @@ export async function scanFolder(project: Project): Promise<FolderScanResult> {
   }));
   await replaceFolderSnapshot(project.id, snapshot);
 
+  // Mark matched items in progress automatically — "in progress" is excluded
+  // from the percentage, so applying it needs no approval. Done stays explicit.
   if (changedFiles.length > 0 && project.progress_mode === "evidence") {
     const items = await listMvpItems(project.id);
-    const matches = matchFilesToItems(changedFiles, items);
-    for (const m of matches) {
-      await upsertProposedItemUpdate({
-        project_id: project.id,
-        mvp_item_id: m.item.id,
-        suggested_status: "in_progress",
-        evidence: formatEvidence(m),
-        confidence: m.confidence,
-        source: "folder-scan",
-        session_id: "",
-      });
+    for (const m of matchFilesToItems(changedFiles, items)) {
+      if (m.item.status === "not_started") {
+        await setMvpItemStatus(m.item.id, "in_progress", formatEvidence(m));
+      }
     }
   }
 

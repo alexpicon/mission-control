@@ -157,6 +157,12 @@ CREATE TABLE IF NOT EXISTS achievements_unlocked (
 );
 "#;
 
+// Session id on timeline entries, so an auto-filed Claude Code session can be
+// recorded exactly once per session without a pending-approval queue.
+const SCHEMA_V6: &str = r#"
+ALTER TABLE updates ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
+"#;
+
 // Deadlines. A target date per project, stored as plain 'YYYY-MM-DD' so the
 // countdown is computed in local time and never drifts with timezones.
 // Empty string = no deadline set (deadlines are opt-in, never required).
@@ -629,6 +635,12 @@ pub fn run() {
             version: 5,
             description: "deadlines: per-project target date",
             sql: SCHEMA_V5,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 6,
+            description: "auto-filed session log: session_id on updates",
+            sql: SCHEMA_V6,
             kind: MigrationKind::Up,
         },
     ];
