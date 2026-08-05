@@ -97,7 +97,7 @@ export function LevelBadge({ level, pulseKey }: { level: LevelInfo; pulseKey: nu
   }, [level]);
 
   return (
-    <div className="relative rounded-xl border border-zinc-200 bg-gradient-to-br from-white to-zinc-50 p-3">
+    <div className="relative rounded-xl bg-white/5 p-3 ring-1 ring-inset ring-white/10">
       <span
         key={`glow-${pulseKey}`}
         className="mc-glow pointer-events-none absolute inset-0 rounded-xl"
@@ -109,13 +109,15 @@ export function LevelBadge({ level, pulseKey }: { level: LevelInfo; pulseKey: nu
           <span className="grid h-6 w-6 place-items-center rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 text-[11px] font-bold text-white shadow-sm">
             {dispLevel}
           </span>
-          <span className="text-sm font-semibold text-zinc-900">Level {dispLevel}</span>
+          <span className="text-sm font-semibold text-white">Level {dispLevel}</span>
         </div>
-        <span className="text-xs font-medium tabular-nums text-zinc-400">{level.totalXp} XP</span>
+        <span className="text-xs font-medium tabular-nums text-zinc-500">
+          {level.totalXp} XP
+        </span>
       </div>
 
       <div
-        className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100"
+        className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"
         role="progressbar"
         aria-valuenow={level.pctToNext}
         aria-valuemin={0}
@@ -129,7 +131,7 @@ export function LevelBadge({ level, pulseKey }: { level: LevelInfo; pulseKey: nu
           style={{ width: `${dispPct}%` }}
         />
       </div>
-      <p className="mt-1 text-[11px] text-zinc-400">
+      <p className="mt-1 text-[11px] text-zinc-500">
         {level.xpForNextLevel - level.xpIntoLevel} XP to level {dispLevel + 1}
       </p>
 

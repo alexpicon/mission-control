@@ -77,17 +77,22 @@ export function Dashboard({
 
   if (projects.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center text-center">
-        <h2 className="text-lg font-semibold text-zinc-900">No projects yet</h2>
-        <p className="mt-1 max-w-sm text-sm text-zinc-500">
-          Add the projects, products, or applications you're juggling. Choose a
-          project folder and MVP file to enable automatic progress tracking.
+      <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+        <div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 text-3xl shadow-lg shadow-emerald-500/20">
+          🚀
+        </div>
+        <h2 className="mt-4 text-xl font-bold tracking-tight text-zinc-900">
+          Nothing tracked yet
+        </h2>
+        <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-zinc-500">
+          Add the projects you're juggling. Point each one at its folder and a
+          checklist file, and progress stops being a guess — it gets counted.
         </p>
         <button
           onClick={onNewProject}
-          className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          className="mt-5 rounded-xl bg-gradient-to-br from-zinc-900 to-zinc-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
         >
-          + Add your first project
+          Add your first project
         </button>
       </div>
     );

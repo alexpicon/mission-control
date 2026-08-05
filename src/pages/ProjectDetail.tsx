@@ -114,10 +114,11 @@ export function ProjectDetail({
       </button>
 
       {/* Header */}
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="border-b border-zinc-100 bg-gradient-to-br from-zinc-50 to-white p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-zinc-900">
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
               {project.name}
             </h1>
             {project.is_focus === 1 && (
@@ -146,7 +147,9 @@ export function ProjectDetail({
           )}
         </div>
 
-        <dl className="mt-4 space-y-1.5 text-sm">
+        </div>
+
+        <dl className="space-y-1.5 p-5 text-sm">
           <div className="flex gap-2">
             <dt className="w-20 shrink-0 text-zinc-400">Blocker</dt>
             <dd className="text-zinc-700">{project.blocker || "—"}</dd>
@@ -186,7 +189,7 @@ export function ProjectDetail({
           </div>
         </dl>
 
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 border-t border-zinc-100 bg-zinc-50/60 p-4">
           <button
             onClick={() => onEdit(project)}
             className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
